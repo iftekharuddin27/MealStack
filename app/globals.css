@@ -1,0 +1,68 @@
+/* ============================================================
+   MealStack · Global CSS
+   Dark-first design system using CSS custom properties.
+   ============================================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark theme (default) */
+    --background:        0 0% 5%;       /* #0d0f0e */
+    --background-2:      120 4% 8%;     /* #141614 */
+    --background-3:      120 4% 10%;    /* #1a1d1a */
+    --surface:           120 3% 14%;    /* #242824 */
+    --surface-2:         120 3% 17%;    /* #2a2e2a */
+    --border:            120 3% 19%;    /* #2e332e */
+    --border-2:          120 3% 22%;    /* #363b36 */
+
+    --foreground:        120 6% 92%;    /* #e8ede8 */
+    --muted-foreground:  120 4% 63%;    /* #9fa89f */
+    --subtle:            120 3% 42%;    /* #6b736b */
+
+    /* Brand */
+    --accent:            77 76% 58%;    /* #a3e635 lime-400 */
+    --accent-hover:      83 69% 45%;    /* #84cc16 lime-500 */
+
+    /* Semantic */
+    --green:    142 71% 45%;
+    --amber:    38  92% 50%;
+    --red:      0   91% 71%;
+    --teal:     171 77% 51%;
+
+    --radius: 0.625rem;
+  }
+
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar       { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--border-2)); border-radius: 4px; }
+}
+
+@layer utilities {
+  .font-head  { font-family: var(--font-serif); }
+  .font-mono  { font-family: var(--font-mono); }
+
+  /* Glass card */
+  .card {
+    @apply bg-surface border border-border rounded-xl;
+  }
+
+  /* Expiry color utilities */
+  .expiry-critical { @apply text-red-400; }
+  .expiry-warning  { @apply text-amber-400; }
+  .expiry-ok       { @apply text-green-400; }
+  .expiry-expired  { @apply text-red-600; }
+}
