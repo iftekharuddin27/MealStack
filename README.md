@@ -200,57 +200,13 @@ npm install
 1. Go to [supabase.com](https://supabase.com) → New Project
 2. Copy your **Project URL** and **Anon Key** from Project Settings → API
 
-### 3. Set environment variables
 
-```bash
-cp .env.example .env.local
-# Edit .env.local with your Supabase URL and Anon Key
-```
 
-### 4. Run the database migrations
-
-In the Supabase SQL Editor, run:
-```sql
--- First:
-supabase/migrations/001_initial_schema.sql
-
--- Then (optional sample data):
-supabase/seed.sql
-```
-
-Or using the Supabase CLI:
-```bash
-npx supabase db push
-```
-
-### 5. Start the dev server
+### 3. Start the dev server
 
 ```bash
 npm run dev
-# Open http://localhost:3000
 ```
 
 ---
 
-## Deployment
-
-### Vercel (recommended)
-
-```bash
-npm i -g vercel
-vercel --prod
-```
-
-Set these environment variables in the Vercel dashboard:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_APP_URL` (your Vercel URL)
-
----
-
-## Author
-
-**Capstone** — Student ID: 2020-1-60-236  
-Course: CSE488 — Big Data Analytics  
-Institution: East West University  
-Supervisor: Shafi Sir
