@@ -38,7 +38,7 @@ export default function CookModal({ recipe, inventory, onClose }: CookModalProps
         if (!ingredient) return item;
 
         const nextBase = Math.max(0, (item.quantity_base ?? 0) - ingredient.quantity_base);
-        const factor = item.quantity > 0 ? (item.quantity_base / item.quantity) : 1;
+        const factor = item.qty > 0 ? (item.quantity_base / item.qty) : 1;
         const nextQty = factor > 0 ? Math.round((nextBase / factor) * 1000) / 1000 : 0;
 
         return {

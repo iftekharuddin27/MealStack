@@ -44,7 +44,7 @@ function summarize(namesAndDates: Array<{ recipe_name: string; cooked_at: string
     }
   }
 
-  const items = [...map.values()].sort(
+  const items = Array.from(map.values()).sort(
     (a, b) => new Date(b.last_cooked_at).getTime() - new Date(a.last_cooked_at).getTime()
   );
 

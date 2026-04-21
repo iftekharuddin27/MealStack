@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     const { data: newIng, error: ingError } = await supabase
       .from('ingredients')
       .insert({ name: ingredient_name, category, default_unit: unit })
-      .select('id')
+      .select('id, name')
       .single();
     
     if (ingError) {

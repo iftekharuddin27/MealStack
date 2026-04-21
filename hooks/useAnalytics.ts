@@ -37,6 +37,23 @@ interface HistoryEntry {
   };
 }
 
+function normalizeRecipe(rawRecipe: any): HistoryEntry['recipes'] {
+  const recipeObj = Array.isArray(rawRecipe) ? rawRecipe[0] : rawRecipe;
+
+  return {
+    recipe_ingredients: (recipeObj?.recipe_ingredients ?? []).map((ri: any) => {
+      const ingredientObj = Array.isArray(ri?.ingredient) ? ri.ingredient[0] : ri?.ingredient;
+      return {
+        quantity_base: ri?.quantity_base ?? 0,
+        ingredient: {
+          category: ingredientObj?.category ?? 'grain',
+          price_per_unit: ingredientObj?.price_per_unit ?? 0,
+        },
+      };
+    }),
+  };
+}
+
 async function fetchRecipesById() {
   const { data, error } = await supabase
     .from('recipes')
@@ -130,7 +147,13 @@ async function fetchAnalytics(): Promise<AnalyticsSummary> {
     })
     .filter((entry): entry is HistoryEntry => Boolean(entry));
 
-  const serverHistory: HistoryEntry[] = (error ? [] : (data ?? []) as HistoryEntry[]);
+  const serverHistory: HistoryEntry[] = error
+    ? []
+    : (data ?? []).map((row: any) => ({
+        cooked_at: row.cooked_at,
+        money_saved: row.money_saved ?? 0,
+        recipes: normalizeRecipe(row.recipes),
+      }));
   const mergedHistory = [...serverHistory, ...localHistory];
 
   const dedupedByCook = Array.from(
@@ -144,7 +167,7 @@ async function fetchAnalytics(): Promise<AnalyticsSummary> {
   // Aggregate savings by category
   const categoryMap: Record<string, number> = {};
   for (const entry of dedupedByCook) {
-    for (const ri of (entry.recipes as any)?.recipe_ingredients ?? []) {
+    for (const ri of entry.recipes.recipe_ingredients) {
       const cat = ri.ingredient?.category ?? 'grain';
       const saved = (ri.quantity_base ?? 0) * (ri.ingredient?.price_per_unit ?? 0);
       categoryMap[cat] = (categoryMap[cat] ?? 0) + saved;
