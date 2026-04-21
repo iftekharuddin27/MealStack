@@ -130,8 +130,11 @@ async function fetchInventory(): Promise<InventoryItemFlat[]> {
   const res = await fetch('/api/inventory');
 
   if (!res.ok) {
-    if (res.status === 401) return [];
-    return userId ? readInventoryFallback(userId) : [];
+    // Keep local inventory visible if server auth/data is temporarily unavailable.
+    if (userId) {
+      return readInventoryFallback(userId);
+    }
+    return [];
   }
 
   const { data } = await res.json();
@@ -145,8 +148,10 @@ async function fetchInventory(): Promise<InventoryItemFlat[]> {
 
   const fallbackItems = readInventoryFallback(userId);
   const shouldSyncPending = getSyncPending(userId);
+  const shouldRecoverFromFallback =
+    fallbackItems.length > 0 && (shouldSyncPending || mapped.length === 0);
 
-  if (fallbackItems.length > 0 && shouldSyncPending) {
+  if (shouldRecoverFromFallback) {
     const synced = await syncFallbackToServer(fallbackItems);
 
     if (synced) {
@@ -154,11 +159,22 @@ async function fetchInventory(): Promise<InventoryItemFlat[]> {
       if (refreshed.ok) {
         const refreshedJson = await refreshed.json();
         const refreshedMapped = mapServerInventory(refreshedJson.data ?? []);
+
+        // Avoid wiping local data when server read-back is unexpectedly empty.
+        if (refreshedMapped.length === 0 && fallbackItems.length > 0) {
+          writeInventoryFallback(userId, fallbackItems);
+          setSyncPending(userId, true);
+          return fallbackItems;
+        }
+
         writeInventoryFallback(userId, refreshedMapped);
         setSyncPending(userId, false);
         return refreshedMapped;
       }
-      setSyncPending(userId, false);
+      const merged = mergePreferFallback(mapped, fallbackItems);
+      writeInventoryFallback(userId, merged);
+      setSyncPending(userId, true);
+      return merged;
     } else {
       const merged = mergePreferFallback(mapped, fallbackItems);
       writeInventoryFallback(userId, merged);
@@ -168,6 +184,7 @@ async function fetchInventory(): Promise<InventoryItemFlat[]> {
   }
 
   writeInventoryFallback(userId, mapped);
+  setSyncPending(userId, false);
 
   return mapped;
 }
