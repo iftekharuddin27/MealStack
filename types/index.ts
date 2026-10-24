@@ -39,7 +39,14 @@ export interface InventoryItemFlat {
   category: Category;
   expires_at: string;
   price_per_unit: number;
+  purchased_at: string;
+  storage_location: StorageLocation;
+  purchase_price: number | null;
+  initial_quantity_base: number;
 }
+
+export type StorageLocation = 'fridge' | 'freezer' | 'pantry' | 'counter';
+export type InventoryEventType = 'consumed' | 'discarded' | 'donated' | 'expired';
 
 // ── Recipe ─────────────────────────────────────────────────
 export interface RecipeIngredient {
@@ -70,31 +77,36 @@ export interface CookingHistory {
   recipe_id: string;
   recipe: Recipe; // joined
   cooked_at: string;
-  money_saved: number;
+  ingredient_value_used: number;
+  rescued_value: number;
+  items_rescued: number;
   servings_made: number;
 }
 
 // ── Analytics ──────────────────────────────────────────────
-export interface SavingsByCategory {
+export interface RescuedValueByCategory {
   category: Category;
-  total_saved: number;
+  rescued_value: number;
 }
 
 export interface WeeklySavings {
   week_label: string;
-  saved: number;
+  rescued: number;
   wasted: number;
-  near_miss: number;
+  donated: number;
 }
 
 export interface AnalyticsSummary {
-  total_saved_7d: number;
+  rescued_value_7d: number;
   recipes_cooked_7d: number;
-  total_saved_30d: number;
+  ingredient_value_used_30d: number;
+  rescued_value_30d: number;
+  wasted_value_30d: number;
+  donated_value_30d: number;
   recipes_cooked_30d: number;
   items_rescued: number;
   waste_rate_pct: number;
-  savings_by_category: SavingsByCategory[];
+  rescued_by_category: RescuedValueByCategory[];
   weekly_trend: WeeklySavings[];
 }
 
@@ -113,6 +125,29 @@ export interface AddInventoryRequest {
   quantity: number;
   unit: Unit;
   category: Category;
+  expires_at: string;
+  purchased_at?: string;
+  storage_location: StorageLocation;
+  purchase_price?: number | null;
+}
+
+export interface UpdateInventoryRequest {
+  id: string;
+  quantity: number;
+  unit: Unit;
+  expires_at: string;
+  storage_location: StorageLocation;
+  purchase_price?: number | null;
+}
+
+export interface ShoppingListItem {
+  id: string;
+  ingredient_id: string | null;
+  ingredient_name: string;
+  quantity_base: number;
+  unit: 'g' | 'ml' | 'pcs';
+  checked: boolean;
+  created_at: string;
 }
 
 export interface DeductInventoryRequest {

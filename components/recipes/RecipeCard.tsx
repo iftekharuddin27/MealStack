@@ -1,33 +1,21 @@
-// ============================================================
-// MealStack · RecipeCard Component
-// Displays a single recipe with ingredients and cook button.
-// ============================================================
-
 'use client';
 
 import { useState } from 'react';
 import CookModal from './CookModal';
-import type { Recipe, InventoryItemFlat } from '@/types';
+import { useAddShoppingItems } from '@/hooks/useShoppingList';
+import type { MissingIngredient } from '@/lib/subsetMatcher';
+import type { InventoryItemFlat, Recipe } from '@/types';
 
-interface RecipeCardProps {
+interface Props {
   recipe: Recipe;
   inventory: InventoryItemFlat[];
   cookable?: boolean;
-  missingIngredients?: string[];
+  missingIngredients?: MissingIngredient[];
+  availableRatio?: number;
 }
 
-const THUMB_GRADIENTS: Record<string, string> = {
-  '🍳': 'from-yellow-950 to-amber-950',
-  '🍝': 'from-orange-950 to-red-950',
-  '🥣': 'from-amber-950 to-yellow-950',
-  '🍚': 'from-green-950 to-teal-950',
-  '🥬': 'from-green-950 to-emerald-950',
-};
-
 const DIFFICULTY_COLOR: Record<string, string> = {
-  easy:   'text-green-400',
-  medium: 'text-amber-400',
-  hard:   'text-red-400',
+  easy: 'text-green-400', medium: 'text-amber-400', hard: 'text-red-400',
 };
 
 export default function RecipeCard({
@@ -35,85 +23,67 @@ export default function RecipeCard({
   inventory,
   cookable = true,
   missingIngredients = [],
-}: RecipeCardProps) {
+  availableRatio = 1,
+}: Props) {
   const [modalOpen, setModalOpen] = useState(false);
-  const gradient = THUMB_GRADIENTS[recipe.emoji] ?? 'from-surface to-background-3';
+  const [shoppingMessage, setShoppingMessage] = useState('');
+  const addShoppingItems = useAddShoppingItems();
+
+  async function addMissingToShoppingList() {
+    try {
+      await addShoppingItems.mutateAsync(missingIngredients.map((item) => ({
+        ingredient_id: /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(item.ingredient_id)
+          ? item.ingredient_id
+          : undefined,
+        ingredient_name: item.name,
+        quantity_base: item.shortfall,
+        unit: item.base_unit,
+      })));
+      setShoppingMessage('Added missing quantities to your shopping list.');
+    } catch (error) {
+      setShoppingMessage(error instanceof Error ? error.message : 'Could not update shopping list.');
+    }
+  }
 
   return (
-    <>
-      <div
-        className={`card overflow-hidden transition-all duration-200 ${
-          cookable
-            ? 'hover:border-accent/60 hover:-translate-y-0.5 cursor-pointer'
-            : 'opacity-60 cursor-not-allowed'
-        }`}
-        onClick={() => cookable && setModalOpen(true)}
-      >
-        {/* Thumbnail */}
-        <div
-          className={`h-24 sm:h-28 flex items-center justify-center text-4xl sm:text-5xl bg-gradient-to-br ${gradient}`}
-        >
-          {recipe.emoji}
+    <article className="card overflow-hidden transition-colors hover:border-border-2">
+      <div className={`flex h-24 items-center justify-center bg-gradient-to-br text-5xl ${cookable ? 'from-green-950 to-teal-950' : 'from-background-3 to-surface'}`} aria-hidden="true">{recipe.emoji}</div>
+      <div className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="font-semibold">{recipe.name}</h3>
+          {!cookable && <span className="rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{Math.round(availableRatio * 100)}% covered</span>}
         </div>
-
-        {/* Body */}
-        <div className="p-4 space-y-3">
-          <div className="font-semibold text-[14px]">{recipe.name}</div>
-
-          {/* Meta chips */}
-          <div className="flex flex-wrap gap-2 sm:gap-3 font-mono text-[10px] text-subtle">
-            <span>⏱ {recipe.time_minutes} min</span>
-            <span>👤 {recipe.servings}</span>
-            <span className={DIFFICULTY_COLOR[recipe.difficulty]}>
-              ⚡ {recipe.difficulty}
-            </span>
-          </div>
-
-          {/* Ingredient tags */}
-          <div className="flex flex-wrap gap-1.5">
-            {recipe.recipe_ingredients.map((ri) => {
-              const isMissing = missingIngredients.includes(ri.ingredient.name);
-              return (
-                <span
-                  key={ri.id}
-                  className={`font-mono text-[10px] px-2 py-0.5 rounded-md border ${
-                    isMissing
-                      ? 'bg-red-950 text-red-400 border-red-900'
-                      : 'bg-background-3 text-subtle border-border'
-                  }`}
-                >
-                  {ri.ingredient.name}
-                </span>
-              );
-            })}
-          </div>
-
-          {/* Action */}
-          {cookable ? (
-            <button
-              onClick={(e) => { e.stopPropagation(); setModalOpen(true); }}
-              className="w-full bg-accent hover:bg-accent-hover text-background font-bold text-[12px] py-2.5 rounded-lg transition tracking-wide"
-            >
-              Mark as Cooked → Auto-Deduct
-            </button>
-          ) : (
-            <div className="w-full py-2.5 text-center font-mono text-[10px] text-subtle">
-              {missingIngredients.length > 0
-                ? `Missing: ${missingIngredients.slice(0, 2).join(', ')}${missingIngredients.length > 2 ? '…' : ''}`
-                : 'Ingredients unavailable'}
-            </div>
-          )}
+        <div className="flex flex-wrap gap-3 font-mono text-[10px] text-muted-foreground">
+          <span>Time: {recipe.time_minutes} min</span>
+          <span>Serves {recipe.servings}</span>
+          <span className={DIFFICULTY_COLOR[recipe.difficulty]}>Difficulty: {recipe.difficulty}</span>
         </div>
+        <ul className="flex flex-wrap gap-1.5" aria-label="Ingredients">
+          {recipe.recipe_ingredients.map((ingredient) => {
+            const missing = missingIngredients.find((item) => item.ingredient_id === ingredient.ingredient_id);
+            return <li key={ingredient.id} className={`rounded-md border px-2 py-0.5 font-mono text-[10px] ${missing ? 'border-red-900 bg-red-950 text-red-300' : 'border-border bg-background-3 text-muted-foreground'}`}>{ingredient.ingredient.name}</li>;
+          })}
+        </ul>
+
+        {cookable ? (
+          <button onClick={() => setModalOpen(true)} className="w-full rounded-lg bg-accent py-2.5 text-[12px] font-bold tracking-wide text-background transition hover:bg-accent-hover">Cook recipe · FIFO deduction</button>
+        ) : (
+          <div className="space-y-2">
+            <ul className="space-y-1 text-xs text-red-300">
+              {missingIngredients.map((item) => (
+                <li key={item.ingredient_id}>
+                  {item.reason === 'incompatible_unit'
+                    ? `${item.name}: inventory uses an incompatible unit`
+                    : `${item.name}: need ${Math.round(item.shortfall * 100) / 100}${item.base_unit} more`}
+                </li>
+              ))}
+            </ul>
+            <button onClick={addMissingToShoppingList} disabled={addShoppingItems.isPending} className="w-full rounded-lg border border-accent/60 py-2.5 text-xs font-medium text-accent hover:bg-green-950/30 disabled:opacity-60">{addShoppingItems.isPending ? 'Adding…' : 'Add missing items to shopping list'}</button>
+            {shoppingMessage && <p role="status" className="text-xs text-muted-foreground">{shoppingMessage}</p>}
+          </div>
+        )}
       </div>
-
-      {/* Cook Modal */}
-      {modalOpen && (
-        <CookModal
-          recipe={recipe}
-          inventory={inventory}
-          onClose={() => setModalOpen(false)}
-        />
-      )}
-    </>
+      {modalOpen && <CookModal recipe={recipe} inventory={inventory} onClose={() => setModalOpen(false)} />}
+    </article>
   );
 }

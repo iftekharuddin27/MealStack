@@ -20,7 +20,7 @@ export default async function InventoryPage() {
           Inventory <em className="text-accent not-italic">Manager</em>
         </h1>
         <p className="mt-1 font-mono text-xs text-subtle">
-          Fast-entry form · Unit-normalized · Auto-expiry logic by category
+          Purchase lots · Validated units · FIFO expiry-aware deduction
         </p>
       </div>
       <div className="p-4 space-y-6 sm:p-6 sm:space-y-8 lg:p-8">

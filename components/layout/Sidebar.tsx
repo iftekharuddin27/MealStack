@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
 import { useInventory } from '@/hooks/useInventory';
 import { getExpiryStatus } from '@/lib/expiryLogic';
+import { DEMO_FALLBACK_ENABLED } from '@/lib/demoMode';
 
 const navItems = [
   {
@@ -45,6 +46,17 @@ const navItems = [
           <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M2 4h12v9a1 1 0 01-1 1H3a1 1 0 01-1-1V4z" />
             <path d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Shopping List',
+        href: '/shopping-list',
+        icon: (
+          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <path d="M2 3h2l1.2 7h7.6l1.2-5H5" />
+            <circle cx="7" cy="13" r="1" />
+            <circle cx="12" cy="13" r="1" />
           </svg>
         ),
       },
@@ -240,12 +252,14 @@ export default function Sidebar() {
           >
             View analytics
           </button>
-          <button
-            onClick={clearOfflineData}
-            className="w-full text-left px-4 py-2.5 text-sm text-amber-400 hover:bg-amber-950/20 transition"
-          >
-            Clear local backup data
-          </button>
+          {DEMO_FALLBACK_ENABLED && (
+            <button
+              onClick={clearOfflineData}
+              className="w-full text-left px-4 py-2.5 text-sm text-amber-400 hover:bg-amber-950/20 transition"
+            >
+              Clear demo fallback data
+            </button>
+          )}
           <button
             onClick={handleLogout}
             className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-950/30 transition"
@@ -262,6 +276,8 @@ export default function Sidebar() {
       <div className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-border bg-background-2 px-4 py-3 md:hidden">
         <button
           onClick={() => setMobileOpen((v) => !v)}
+          aria-expanded={mobileOpen}
+          aria-controls="mobile-navigation"
           className="inline-flex items-center gap-2 rounded-md border border-border bg-background-3 px-3 py-1.5 text-xs font-mono text-foreground"
         >
           <span>{mobileOpen ? 'Close' : 'Menu'}</span>
@@ -292,6 +308,7 @@ export default function Sidebar() {
           onClick={() => setMobileOpen(false)}
         />
         <aside
+          id="mobile-navigation"
           className={`absolute left-0 top-0 h-full w-72 max-w-[85vw] bg-background-2 border-r border-border flex flex-col transition-transform ${
             mobileOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
@@ -314,26 +331,28 @@ export default function Sidebar() {
           className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={(e) => e.target === e.currentTarget && setShowProfileModal(false)}
         >
-          <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <h3 className="font-head text-xl mb-1">Edit profile</h3>
+          <div role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title" className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 id="profile-dialog-title" className="font-head text-xl mb-1">Edit profile</h3>
             <p className="font-mono text-xs text-subtle mb-4">Update how your name appears in the app.</p>
 
             <div className="space-y-3 mb-5">
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-widest text-subtle block mb-1">
+                <label htmlFor="profile-display-name" className="font-mono text-[10px] uppercase tracking-widest text-subtle block mb-1">
                   Display name
                 </label>
                 <input
+                  id="profile-display-name"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   className="w-full bg-background-3 border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition"
                 />
               </div>
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-widest text-subtle block mb-1">
+                <label htmlFor="profile-email" className="font-mono text-[10px] uppercase tracking-widest text-subtle block mb-1">
                   Email
                 </label>
                 <input
+                  id="profile-email"
                   value={userEmail}
                   readOnly
                   className="w-full bg-background-3 border border-border rounded-lg px-3 py-2 text-sm text-subtle"

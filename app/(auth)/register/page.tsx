@@ -23,20 +23,31 @@ export default function RegisterPage() {
     setError('');
     setMessage('');
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { 
-        data: { full_name: name },
-        emailRedirectTo: `${location.origin}/`,
-      },
-    });
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: name },
+          emailRedirectTo: `${location.origin}/`,
+        },
+      });
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setMessage('Check your email to confirm your account, then sign in.');
+      if (error) {
+        setError(error.message);
+      } else {
+        setMessage('Check your email to confirm your account, then sign in.');
+      }
+    } catch (error) {
+      setError(
+        error instanceof Error && error.message === 'Failed to fetch'
+          ? 'Unable to reach Supabase. Check your .env.local values and internet connection, then restart the dev server.'
+          : error instanceof Error
+            ? error.message
+            : 'Unable to create your account. Please try again.'
+      );
     }
+
     setLoading(false);
   }
 
@@ -58,10 +69,11 @@ export default function RegisterPage() {
 
           <form onSubmit={handleRegister} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="font-mono text-[10px] uppercase tracking-widest text-subtle">
+              <label htmlFor="register-name" className="font-mono text-[10px] uppercase tracking-widest text-subtle">
                 Full Name
               </label>
               <input
+                id="register-name"
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -71,10 +83,11 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-mono text-[10px] uppercase tracking-widest text-subtle">
+              <label htmlFor="register-email" className="font-mono text-[10px] uppercase tracking-widest text-subtle">
                 Email
               </label>
               <input
+                id="register-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -84,10 +97,11 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-mono text-[10px] uppercase tracking-widest text-subtle">
+              <label htmlFor="register-password" className="font-mono text-[10px] uppercase tracking-widest text-subtle">
                 Password
               </label>
               <input
+                id="register-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

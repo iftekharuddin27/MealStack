@@ -1,6 +1,6 @@
 # MealStack — Zero-Waste Kitchen Engine
 
-> Manage your kitchen inventory, match recipes to exactly what you have, and eliminate food waste. Built as a CSE488 (Big Data Analytics) capstone portfolio project.
+> Track purchase lots, match recipes against non-expired stock, and measure real consumption, donation, and waste outcomes. Built as a CSE488 (Big Data Analytics) capstone portfolio project.
 
 ---
 
@@ -98,9 +98,9 @@ Complexity: O(N + R×I)
 ```
 
 Steps:
-1. Build a `Map<ingredientName, baseQuantity>` from the user's inventory in O(N)
-2. For each recipe, check that every ingredient's required base quantity ≤ available base quantity
-3. Return matched (cookable) and unmatched (with per-ingredient shortfall details)
+1. Exclude expired lots and build a dimension-aware inventory map in O(N)
+2. Reject mass/volume/count mismatches before comparing quantities
+3. Return cookable recipes ordered by expiry urgency and closest matches with exact shortfalls
 
 ### 2. Unit Normalization — `lib/unitNormalizer.ts`
 
@@ -140,48 +140,54 @@ Dashboard color coding:
 - 🟡 **AMBER** — < 48 hours remaining (`warning`)
 - 🟢 **GREEN** — ≥ 48 hours remaining (`ok`)
 
-### 4. Auto-Deduction — `POST /api/inventory/deduct`
+### 4. Atomic FIFO Deduction — `POST /api/inventory/deduct`
 
 When a user clicks "Mark as Cooked":
 1. CookModal shows a preview of remaining quantities per ingredient
-2. On confirm, calls `POST /api/inventory/deduct` with `{ recipe_id }`
-3. Server fetches `quantity_base` for each ingredient in the user's inventory
-4. Subtracts the recipe's `quantity_base` for each ingredient
-5. Writes updated `quantity` and `quantity_base` back to `user_inventory`
-6. Logs entry to `cooking_history` with `money_saved` calculated from `price_per_unit × quantity_used`
-7. TanStack Query invalidates `['inventory']` and `['analytics']` caches → UI re-renders
+2. On confirm, calls `POST /api/inventory/deduct` with `{ recipe_id, servings }`
+3. PostgreSQL locks every required lot and validates all non-expired quantities
+4. The `cook_recipe` RPC deducts earliest-expiring lots first
+5. Usage and inventory-event snapshots preserve the quantity, category, value, and expiry at cook time
+6. Deduction and history insertion commit together or roll back together
+7. TanStack Query invalidates inventory, cooking-history, and analytics caches
 
 ### 5. Optimistic Updates — `hooks/useInventory.ts`
 
 Adding an item to inventory feels instant:
 1. `onMutate`: immediately append the new item to the TanStack Query cache
-2. Supabase `upsert` runs in the background
+2. A new purchase lot is inserted in the background
 3. `onError`: roll back cache to the previous snapshot if the write fails
 4. `onSettled`: always refetch to sync with server truth
 
-### 6. Waste Analytics
+### 6. Measured Waste Analytics
 
-The `cooking_history` table stores `money_saved` per cook (calculated as: sum of `ingredient.price_per_unit × quantity_base_used` for all ingredients). This powers:
-- Total BDT saved in last 30 days
-- Savings breakdown by food category (donut chart)
-- Weekly savings trend (line chart)
-- Items rescued before expiry (count from cooking near expiry dates)
+`inventory_events` records consumed, donated, discarded, and expired outcomes. An item is considered rescued only when it is consumed within 48 hours of expiry. The dashboard derives:
+- At-risk ingredient value rescued
+- Tracked discarded value and waste-value rate
+- Donated value
+- Rescued lots and category breakdowns
+- Five-week outcome trends
+
+No dashboard metric is generated from a fixed percentage or heuristic.
 
 ---
 
 ## Database Schema
 
-5 tables in Supabase PostgreSQL:
+The main Supabase PostgreSQL tables are:
 
 ```
 ingredients          — Master ingredient catalog (name, category, unit, price)
-user_inventory       — Per-user fridge contents (linked to auth.users via RLS)
+user_inventory       — Per-user purchase lots with expiry, storage, and price data
 recipes              — Recipe catalog
 recipe_ingredients   — Join table (recipe ↔ ingredient with quantities)
-cooking_history      — Audit log of cooks, used for Waste Analytics
+cooking_history      — Atomic cooking audit records
+cooking_ingredient_usage — Immutable per-lot cooking snapshots
+inventory_events     — Consumed, donated, discarded, and expired outcomes
+shopping_list        — Consolidated per-user missing ingredients
 ```
 
-Row-Level Security (RLS) is enabled on `user_inventory` and `cooking_history` — users can only read and write their own rows.
+Row-Level Security is enabled on every exposed table. Catalog data is read-only unless the row belongs to the current user; inventory, events, history, and shopping-list rows are isolated by user.
 
 ---
 
@@ -200,6 +206,15 @@ npm install
 1. Go to [supabase.com](https://supabase.com) → New Project
 2. Copy your **Project URL** and **Anon Key** from Project Settings → API
 
+Create `.env.local` in the project root using `.env.example` as a template:
+
+```bash
+cp .env.example .env.local
+```
+
+Set `NEXT_PUBLIC_SUPABASE_URL` to the Project URL and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` to the project's anon key. Restart the dev
+server after changing environment variables.
 
 
 ### 3. Start the dev server
@@ -208,5 +223,15 @@ npm install
 npm run dev
 ```
 
----
+Apply both SQL files in `supabase/migrations/` before starting the app. Keep
+`NEXT_PUBLIC_ENABLE_DEMO_FALLBACK=false` outside an explicit local demo.
 
+### 4. Verify quality gates
+
+```bash
+npm run check
+```
+
+This runs linting, strict TypeScript checks, domain tests, and a production build.
+
+---

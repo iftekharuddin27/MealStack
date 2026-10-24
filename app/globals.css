@@ -20,7 +20,9 @@
 
     --foreground:        120 6% 92%;    /* #e8ede8 */
     --muted-foreground:  120 4% 63%;    /* #9fa89f */
-    --subtle:            120 3% 42%;    /* #6b736b */
+    --subtle:            120 4% 58%;    /* accessible secondary text on dark surfaces */
+
+    color-scheme: dark;
 
     /* Brand */
     --accent:            77 76% 58%;    /* #a3e635 lime-400 */
@@ -43,6 +45,20 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--accent));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 
   /* Scrollbar */

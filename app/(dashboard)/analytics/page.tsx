@@ -23,7 +23,7 @@ export default async function AnalyticsPage() {
           Waste <em className="text-accent not-italic">Analytics</em>
         </h1>
         <p className="mt-1 font-mono text-xs text-subtle">
-          Money saved by not letting food expire · 30-day rolling view
+          Measured consumption, donation, and waste outcomes · 30-day rolling view
         </p>
       </div>
       <div className="p-4 space-y-6 sm:p-6 sm:space-y-8 lg:p-8">

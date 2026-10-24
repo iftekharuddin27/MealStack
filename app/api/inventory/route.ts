@@ -1,147 +1,171 @@
-// ============================================================
-// MealStack · GET, POST, DELETE /api/inventory
-// ============================================================
-
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { assignExpiry } from '@/lib/expiryLogic';
-import { toBase } from '@/lib/unitNormalizer';
 import { ingredientNamesMatch } from '@/lib/ingredientAliases';
+import { areUnitsCompatible, getBaseUnit, toBase } from '@/lib/unitNormalizer';
+import {
+  parseAddInventory,
+  parseUpdateInventory,
+  ValidationError,
+  validationMessage,
+} from '@/lib/apiValidation';
+import type { Unit } from '@/types';
 
 function mapDbError(error: { code?: string; message?: string }) {
-  if (error?.code === 'PGRST205') {
+  if (error?.code === 'PGRST205' || error?.message?.includes('schema cache')) {
     return NextResponse.json(
-      {
-        error: 'Database tables are missing. Run Supabase migrations first.',
-        code: 'setup_required',
-      },
+      { error: 'Database migrations are not up to date.', code: 'setup_required' },
       { status: 503 }
     );
   }
-
   return NextResponse.json({ error: error.message ?? 'Database error' }, { status: 500 });
 }
 
-export async function GET() {
+async function getUser() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  return { supabase, user };
+}
 
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+export async function GET() {
+  const { supabase, user } = await getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { data, error } = await supabase
     .from('user_inventory')
     .select(`
-      id, quantity, unit, quantity_base, expires_at, added_at,
+      id, quantity, unit, quantity_base, initial_quantity_base,
+      expires_at, added_at, purchased_at, storage_location, purchase_price,
       ingredients ( id, name, category, default_unit, price_per_unit )
     `)
     .eq('user_id', user.id)
     .order('expires_at', { ascending: true });
 
-  if (error) {
-    console.error('DB_ERROR:', error);
-    return mapDbError(error);
-  }
-
-  return NextResponse.json({ data });
-}
-
-export async function POST(req: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const body = await req.json();
-  const { ingredient_name, quantity, unit, category } = body;
-
-  if (!ingredient_name || !quantity || !unit || !category) {
-    return NextResponse.json({ error: 'ingredient_name, quantity, unit, category are required' }, { status: 400 });
-  }
-
-  const { data: ingredientData, error: findError } = await supabase
-    .from('ingredients')
-    .select('id, name');
-
-  if (findError) {
-    return mapDbError(findError);
-  }
-
-  let ingredient = (ingredientData ?? []).find((ing) =>
-    ingredientNamesMatch(ing.name, ingredient_name)
-  ) ?? null;
-
-  if (!ingredient) {
-    const { data: newIng, error: ingError } = await supabase
-      .from('ingredients')
-      .insert({ name: ingredient_name, category, default_unit: unit })
-      .select('id, name')
-      .single();
-    
-    if (ingError) {
-      console.error('ingError:', ingError);
-      return mapDbError(ingError);
-    }
-    ingredient = newIng;
-  }
-
-  const expires_at = assignExpiry(category).toISOString();
-  
-  // Try to find if user already has this ingredient
-  const { data: existingData, error: existingErr } = await supabase
-    .from('user_inventory')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('ingredient_id', ingredient!.id)
-    .limit(1);
-
-  if (existingErr) {
-    return mapDbError(existingErr);
-  }
-    
-  const existing = existingData && existingData.length > 0 ? existingData[0] : null;
-    
-  let mutation;
-  if (existing) {
-    mutation = supabase
-      .from('user_inventory')
-      .update({
-        quantity,
-        unit,
-        quantity_base: toBase(quantity, unit),
-        expires_at
-      })
-      .eq('id', existing.id)
-      .select()
-      .single();
-  } else {
-    mutation = supabase
-      .from('user_inventory')
-      .insert({
-        user_id: user.id,
-        ingredient_id: ingredient!.id,
-        quantity,
-        unit,
-        quantity_base: toBase(quantity, unit),
-        expires_at
-      })
-      .select()
-      .single();
-  }
-
-  const { data, error } = await mutation;
-
   if (error) return mapDbError(error);
   return NextResponse.json({ data });
 }
 
-export async function DELETE(req: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+export async function POST(req: Request) {
+  const { supabase, user } = await getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get('id');
+  try {
+    const input = parseAddInventory(await req.json());
+    const purchasedAt = input.purchased_at ?? new Date().toISOString();
+    if (new Date(input.expires_at) <= new Date(purchasedAt)) {
+      throw new ValidationError('Expiry must be later than the purchase date.');
+    }
+
+    const { data: ingredientData, error: findError } = await supabase
+      .from('ingredients')
+      .select('id, name, category, default_unit');
+    if (findError) return mapDbError(findError);
+
+    let ingredient = (ingredientData ?? []).find((item) =>
+      ingredientNamesMatch(item.name, input.ingredient_name)
+    ) ?? null;
+
+    if (!ingredient) {
+      const { data, error } = await supabase
+        .from('ingredients')
+        .insert({
+          name: input.ingredient_name,
+          category: input.category,
+          default_unit: getBaseUnit(input.unit),
+          price_per_unit: 0,
+          owner_id: user.id,
+        })
+        .select('id, name, category, default_unit')
+        .single();
+      if (error) return mapDbError(error);
+      ingredient = data;
+    }
+
+    if (!areUnitsCompatible(input.unit, ingredient.default_unit as Unit)) {
+      throw new ValidationError(
+        `${ingredient.name} must use units compatible with ${ingredient.default_unit}.`
+      );
+    }
+
+    const quantityBase = toBase(input.quantity, input.unit);
+    const { data, error } = await supabase
+      .from('user_inventory')
+      .insert({
+        user_id: user.id,
+        ingredient_id: ingredient.id,
+        quantity: input.quantity,
+        unit: input.unit,
+        quantity_base: quantityBase,
+        initial_quantity_base: quantityBase,
+        expires_at: input.expires_at,
+        purchased_at: purchasedAt,
+        storage_location: input.storage_location,
+        purchase_price: input.purchase_price,
+      })
+      .select()
+      .single();
+
+    if (error) return mapDbError(error);
+    return NextResponse.json({ data }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json({ error: validationMessage(error) }, { status: 400 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  const { supabase, user } = await getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    const input = parseUpdateInventory(await req.json());
+    const { data: existing, error: readError } = await supabase
+      .from('user_inventory')
+      .select('id, purchased_at, ingredients(default_unit)')
+      .eq('id', input.id)
+      .eq('user_id', user.id)
+      .single();
+    if (readError || !existing) {
+      return NextResponse.json({ error: 'Inventory lot not found.' }, { status: 404 });
+    }
+
+    const ingredient = Array.isArray(existing.ingredients)
+      ? existing.ingredients[0]
+      : existing.ingredients;
+    if (!ingredient || !areUnitsCompatible(input.unit, ingredient.default_unit as Unit)) {
+      throw new ValidationError('The selected unit is incompatible with this ingredient.');
+    }
+    if (new Date(input.expires_at) <= new Date(existing.purchased_at)) {
+      throw new ValidationError('Expiry must be later than the purchase date.');
+    }
+
+    const quantityBase = toBase(input.quantity, input.unit);
+    const { data, error } = await supabase
+      .from('user_inventory')
+      .update({
+        quantity: input.quantity,
+        unit: input.unit,
+        quantity_base: quantityBase,
+        initial_quantity_base: quantityBase,
+        expires_at: input.expires_at,
+        storage_location: input.storage_location,
+        purchase_price: input.purchase_price,
+      })
+      .eq('id', input.id)
+      .eq('user_id', user.id)
+      .select()
+      .single();
+
+    if (error) return mapDbError(error);
+    return NextResponse.json({ data });
+  } catch (error) {
+    return NextResponse.json({ error: validationMessage(error) }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  const { supabase, user } = await getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const id = new URL(req.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
   const { error } = await supabase
@@ -149,10 +173,6 @@ export async function DELETE(req: Request) {
     .delete()
     .eq('id', id)
     .eq('user_id', user.id);
-
-  if (error) {
-    console.error('mutation error: ', error);
-    return mapDbError(error);
-  }
+  if (error) return mapDbError(error);
   return NextResponse.json({ success: true });
 }

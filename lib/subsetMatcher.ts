@@ -1,111 +1,121 @@
-// ============================================================
-// MealStack · Subset Matcher Algorithm
-//
-// Core engine: returns ONLY recipes where every required
-// ingredient is present in UserInventory at sufficient
-// quantity — after unit normalization.
-//
-// Complexity: O(N + R×I)
-//   N = inventory items (map build)
-//   R = number of recipes
-//   I = average ingredients per recipe
-// ============================================================
-
-import { toBase } from './unitNormalizer';
 import {
-  canonicalIngredientKey,
-  ingredientNamesMatch,
-} from './ingredientAliases';
-import type { Recipe, InventoryItemFlat, Unit } from '@/types';
-
-// ── Types ────────────────────────────────────────────────────
+  areUnitsCompatible,
+  getBaseUnit,
+  getUnitDimension,
+  toBase,
+} from './unitNormalizer.ts';
+import { canonicalIngredientKey, ingredientNamesMatch } from './ingredientAliases.ts';
+import type { InventoryItemFlat, Recipe, Unit } from '@/types';
 
 export interface MatchResult {
-  /** Recipes the user can cook right now */
   matched: Recipe[];
-  /** Recipes the user cannot cook (with reason per ingredient) */
   unmatched: UnmatchedRecipe[];
 }
 
 export interface UnmatchedRecipe {
   recipe: Recipe;
   missing: MissingIngredient[];
+  availableRatio: number;
 }
 
 export interface MissingIngredient {
+  ingredient_id: string;
   name: string;
   required: number;
   required_unit: Unit;
   available: number;
-  shortfall: number;  // in base units
+  shortfall: number;
+  base_unit: 'g' | 'ml' | 'pcs';
+  reason: 'missing' | 'insufficient' | 'incompatible_unit';
 }
 
-// ── Inventory Index ──────────────────────────────────────────
+interface InventoryAggregate {
+  available: number;
+  earliestExpiry: number;
+}
 
-/**
- * Build a normalized inventory lookup map in O(N).
- * Keys are lowercased ingredient names.
- * Values are total quantity in base units (g / ml / pcs).
- *
- * We accumulate quantities so that two separate rows for
- * "Flour 300g" + "Flour 200g" correctly sum to 500g.
- */
-function buildInventoryMap(
-  inventory: InventoryItemFlat[]
-): Map<string, number> {
-  const map = new Map<string, number>();
+function mapKey(name: string, unit: Unit): string {
+  return `${canonicalIngredientKey(name)}:${getUnitDimension(unit)}`;
+}
 
-  for (const item of inventory) {
-    const key = canonicalIngredientKey(item.name);
-    const baseQty = toBase(item.qty, item.unit);
-    map.set(key, (map.get(key) ?? 0) + baseQty);
+function validInventory(inventory: InventoryItemFlat[]): InventoryItemFlat[] {
+  const now = Date.now();
+  return inventory.filter((item) =>
+    item.qty > 0 && new Date(item.expires_at).getTime() > now
+  );
+}
+
+function buildInventoryMap(inventory: InventoryItemFlat[]): Map<string, InventoryAggregate> {
+  const map = new Map<string, InventoryAggregate>();
+
+  for (const item of validInventory(inventory)) {
+    const key = mapKey(item.name, item.unit);
+    const current = map.get(key);
+    const expiry = new Date(item.expires_at).getTime();
+    map.set(key, {
+      available: (current?.available ?? 0) + toBase(item.qty, item.unit),
+      earliestExpiry: Math.min(current?.earliestExpiry ?? Number.POSITIVE_INFINITY, expiry),
+    });
   }
-
   return map;
 }
 
-// ── Core Algorithm ───────────────────────────────────────────
+function recipeExpiryScore(
+  recipe: Recipe,
+  inventoryMap: Map<string, InventoryAggregate>
+): number {
+  return Math.min(
+    ...recipe.recipe_ingredients.map((item) =>
+      inventoryMap.get(mapKey(item.ingredient.name, item.unit as Unit))?.earliestExpiry
+      ?? Number.POSITIVE_INFINITY
+    )
+  );
+}
 
-/**
- * Subset Matcher
- *
- * Given a list of recipes and the user's current inventory,
- * returns matched (can cook now) and unmatched (missing items).
- *
- * Unit normalization is applied to both sides:
- *   - Inventory: "1kg flour" → 1000g in map
- *   - Recipe:    "250g flour" → 250 needed
- *   - Result:    1000 >= 250 ✓  remaining = 750g
- *
- * @param recipes  Full recipe list with their recipe_ingredients
- * @param inventory  User's current fridge contents (flat format)
- */
 export function subsetMatcher(
   recipes: Recipe[],
   inventory: InventoryItemFlat[]
 ): MatchResult {
-  // Step 1: Build normalized inventory map — O(N)
-  const invMap = buildInventoryMap(inventory);
-
+  const inventoryMap = buildInventoryMap(inventory);
+  const nonExpired = validInventory(inventory);
   const matched: Recipe[] = [];
   const unmatched: UnmatchedRecipe[] = [];
 
-  // Step 2: Check each recipe — O(R × I)
   for (const recipe of recipes) {
     const missing: MissingIngredient[] = [];
+    let availableTotal = 0;
+    let requiredTotal = 0;
 
-    for (const ri of recipe.recipe_ingredients) {
-      const key = canonicalIngredientKey(ri.ingredient.name);
-      const needed = toBase(ri.quantity, ri.unit as Unit);
-      const available = invMap.get(key) ?? 0;
+    for (const recipeIngredient of recipe.recipe_ingredients) {
+      const unit = recipeIngredient.unit as Unit;
+      const needed = toBase(recipeIngredient.quantity, unit);
+      const available = inventoryMap.get(
+        mapKey(recipeIngredient.ingredient.name, unit)
+      )?.available ?? 0;
+      const sameNameLots = nonExpired.filter((item) =>
+        ingredientNamesMatch(item.name, recipeIngredient.ingredient.name)
+      );
+      const hasWrongDimension = sameNameLots.length > 0 && sameNameLots.every((item) =>
+        !areUnitsCompatible(item.unit, unit)
+      );
+
+      requiredTotal += needed;
+      availableTotal += Math.min(available, needed);
 
       if (available < needed) {
         missing.push({
-          name: ri.ingredient.name,
-          required: ri.quantity,
-          required_unit: ri.unit as Unit,
+          ingredient_id: recipeIngredient.ingredient_id,
+          name: recipeIngredient.ingredient.name,
+          required: recipeIngredient.quantity,
+          required_unit: unit,
           available,
           shortfall: needed - available,
+          base_unit: getBaseUnit(unit),
+          reason: hasWrongDimension
+            ? 'incompatible_unit'
+            : available > 0
+              ? 'insufficient'
+              : 'missing',
         });
       }
     }
@@ -113,14 +123,26 @@ export function subsetMatcher(
     if (missing.length === 0) {
       matched.push(recipe);
     } else {
-      unmatched.push({ recipe, missing });
+      unmatched.push({
+        recipe,
+        missing,
+        availableRatio: requiredTotal > 0 ? availableTotal / requiredTotal : 0,
+      });
     }
   }
 
+  matched.sort((a, b) =>
+    recipeExpiryScore(a, inventoryMap) - recipeExpiryScore(b, inventoryMap)
+    || a.time_minutes - b.time_minutes
+  );
+  unmatched.sort((a, b) =>
+    b.availableRatio - a.availableRatio
+    || a.missing.length - b.missing.length
+    || a.recipe.time_minutes - b.recipe.time_minutes
+  );
+
   return { matched, unmatched };
 }
-
-// ── Deduction Preview ─────────────────────────────────────────
 
 export interface DeductionPreview {
   ingredient_name: string;
@@ -128,36 +150,38 @@ export interface DeductionPreview {
   before_unit: Unit;
   deduct_qty: number;
   deduct_unit: Unit;
-  after_base: number;    // remaining in base units
-  after_display: string; // e.g. "750g" or "0.75kg"
+  after_base: number;
+  after_display: string;
   used_up: boolean;
 }
 
-/**
- * Preview what the inventory will look like after cooking a recipe.
- * Used by CookModal before the user confirms.
- */
 export function previewDeduction(
   recipe: Recipe,
-  inventory: InventoryItemFlat[]
+  inventory: InventoryItemFlat[],
+  servings = recipe.servings
 ): DeductionPreview[] {
-  return recipe.recipe_ingredients.map((ri) => {
-    const item = inventory.find(
-      (i) => ingredientNamesMatch(i.name, ri.ingredient.name)
-    );
+  const multiplier = servings / Math.max(recipe.servings, 1);
+  const usable = validInventory(inventory);
 
-    const beforeBase = item ? toBase(item.qty, item.unit) : 0;
-    const deductBase = toBase(ri.quantity, ri.unit as Unit);
+  return recipe.recipe_ingredients.map((recipeIngredient) => {
+    const recipeUnit = recipeIngredient.unit as Unit;
+    const lots = usable.filter((item) =>
+      ingredientNamesMatch(item.name, recipeIngredient.ingredient.name)
+      && areUnitsCompatible(item.unit, recipeUnit)
+    );
+    const beforeBase = lots.reduce((sum, item) => sum + toBase(item.qty, item.unit), 0);
+    const deductBase = toBase(recipeIngredient.quantity, recipeUnit) * multiplier;
     const afterBase = Math.max(0, beforeBase - deductBase);
+    const baseUnit = getBaseUnit(recipeUnit);
 
     return {
-      ingredient_name: ri.ingredient.name,
-      before_qty: item?.qty ?? 0,
-      before_unit: (item?.unit ?? ri.unit) as Unit,
-      deduct_qty: ri.quantity,
-      deduct_unit: ri.unit as Unit,
+      ingredient_name: recipeIngredient.ingredient.name,
+      before_qty: beforeBase,
+      before_unit: baseUnit,
+      deduct_qty: Math.round(recipeIngredient.quantity * multiplier * 100) / 100,
+      deduct_unit: recipeUnit,
       after_base: afterBase,
-      after_display: `${Math.round(afterBase)}${item?.unit ?? 'g'}`,
+      after_display: `${Math.round(afterBase * 100) / 100}${baseUnit}`,
       used_up: afterBase === 0,
     };
   });

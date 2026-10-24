@@ -21,7 +21,8 @@ export async function GET() {
   const { data: invData, error: invErr } = await supabase
     .from('user_inventory')
     .select(`
-      id, quantity, unit, quantity_base, expires_at,
+      id, quantity, unit, quantity_base, initial_quantity_base, expires_at,
+      purchased_at, added_at, storage_location, purchase_price,
       ingredients ( name, category, price_per_unit )
     `)
     .eq('user_id', user.id);
@@ -37,6 +38,10 @@ export async function GET() {
     category: row.ingredients.category as Category,
     expires_at: row.expires_at,
     price_per_unit: row.ingredients.price_per_unit ?? 0,
+    purchased_at: row.purchased_at ?? row.added_at,
+    storage_location: row.storage_location ?? 'fridge',
+    purchase_price: row.purchase_price == null ? null : Number(row.purchase_price),
+    initial_quantity_base: Number(row.initial_quantity_base ?? row.quantity_base),
   }));
 
   // Fetch all recipes with ingredients

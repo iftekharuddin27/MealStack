@@ -7,6 +7,7 @@
 
 import { useInventory } from '@/hooks/useInventory';
 import { useRecipeMatch } from '@/hooks/useRecipeMatch';
+import { useAnalytics } from '@/hooks/useAnalytics';
 import { getExpiryInfo, getExpiryStatus, EXPIRY_COLORS } from '@/lib/expiryLogic';
 import RecipeCard from '@/components/recipes/RecipeCard';
 import type { InventoryItemFlat } from '@/types';
@@ -71,12 +72,16 @@ function ExpiryItem({ item }: { item: InventoryItemFlat }) {
 export default function KitchenStatus() {
   const { data: inventory = [], isLoading } = useInventory();
   const { result } = useRecipeMatch(inventory);
+  const { data: analytics, isLoading: analyticsLoading, error: analyticsError } = useAnalytics();
 
   const expiring = [...inventory]
     .filter((i) => getExpiryStatus(i.expires_at) !== 'ok')
     .sort((a, b) => new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime());
 
-  const critical = expiring.filter((i) => getExpiryStatus(i.expires_at) === 'critical');
+  const critical = expiring.filter((i) => {
+    const status = getExpiryStatus(i.expires_at);
+    return status === 'critical' || status === 'expired';
+  });
 
   return (
     <div>
@@ -112,10 +117,10 @@ export default function KitchenStatus() {
             color="teal"
           />
           <StatCard
-            label="Est. money saved"
-            value="৳ 2,840"
-            delta={<><span className="text-green-400 font-medium">+12%</span> vs last month</>}
-            color="red"
+            label="At-risk value rescued"
+            value={analyticsLoading ? '—' : analyticsError ? 'Unavailable' : `৳ ${Math.round(analytics?.rescued_value_30d ?? 0).toLocaleString('en-BD')}`}
+            delta={analyticsError ? 'Analytics migration or connection required' : 'Measured from tracked outcomes · 30 days'}
+            color="green"
           />
         </div>
 

@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/client';
 import { readCookHistoryFallback } from '@/lib/offlineCookHistoryStore';
+import { DEMO_FALLBACK_ENABLED } from '@/lib/demoMode';
 
 export interface WeeklyCookedItem {
   recipe_name: string;
@@ -71,6 +72,7 @@ async function fetchWeeklyCooked(): Promise<WeeklyCookedSummary> {
     .order('cooked_at', { ascending: false });
 
   if (error) {
+    if (!DEMO_FALLBACK_ENABLED) throw new Error(error.message);
     const fallback = readCookHistoryFallback(user.id)
       .filter((row) => new Date(row.cooked_at).getTime() >= new Date(weekStartIso).getTime())
       .map((row) => ({ recipe_name: row.recipe_name, cooked_at: row.cooked_at }));

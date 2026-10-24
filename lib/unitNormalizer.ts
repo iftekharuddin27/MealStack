@@ -21,6 +21,28 @@ export const UNIT_TO_BASE: Record<Unit, number> = {
   cup:  240,  // ~240 ml
 };
 
+export type UnitDimension = 'mass' | 'volume' | 'count';
+
+export function getUnitDimension(unit: Unit): UnitDimension {
+  if (unit === 'g' || unit === 'kg') return 'mass';
+  if (unit === 'pcs') return 'count';
+  return 'volume';
+}
+
+export function getBaseUnit(unit: Unit): 'g' | 'ml' | 'pcs' {
+  const dimension = getUnitDimension(unit);
+  if (dimension === 'mass') return 'g';
+  if (dimension === 'volume') return 'ml';
+  return 'pcs';
+}
+
+export function getCompatibleUnits(unit: Unit): Unit[] {
+  const dimension = getUnitDimension(unit);
+  if (dimension === 'mass') return ['g', 'kg'];
+  if (dimension === 'volume') return ['ml', 'l', 'tsp', 'tbsp', 'cup'];
+  return ['pcs'];
+}
+
 /**
  * Convert a quantity from any supported unit to its base unit.
  * Example: toBase(1, 'kg') → 1000  (grams)
@@ -61,12 +83,5 @@ export function formatQty(qty: number, unit: Unit): string {
  * Count: pcs → only compatible with pcs
  */
 export function areUnitsCompatible(unitA: Unit, unitB: Unit): boolean {
-  const massUnits: Unit[]   = ['g', 'kg'];
-  const volumeUnits: Unit[] = ['ml', 'l', 'tsp', 'tbsp', 'cup'];
-  const countUnits: Unit[]  = ['pcs'];
-
-  const inSameGroup = (groups: Unit[][]) =>
-    groups.some(g => g.includes(unitA) && g.includes(unitB));
-
-  return inSameGroup([massUnits, volumeUnits, countUnits]);
+  return getUnitDimension(unitA) === getUnitDimension(unitB);
 }

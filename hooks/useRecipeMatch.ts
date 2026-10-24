@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/client';
 import { subsetMatcher, type MatchResult } from '@/lib/subsetMatcher';
 import { LOCAL_RECIPES } from '@/lib/localRecipes';
+import { DEMO_FALLBACK_ENABLED } from '@/lib/demoMode';
 import type { InventoryItemFlat, Recipe } from '@/types';
 
 async function fetchAllRecipes(): Promise<Recipe[]> {
@@ -25,15 +26,16 @@ async function fetchAllRecipes(): Promise<Recipe[]> {
     .order('name');
 
   if (error) {
-    // Fallback mode for local/dev when DB migrations are not applied yet.
-    if ((error as any).code === 'PGRST205' || error.message?.includes('public.recipes')) {
+    if (DEMO_FALLBACK_ENABLED && (
+      (error as any).code === 'PGRST205' || error.message?.includes('public.recipes')
+    )) {
       return LOCAL_RECIPES;
     }
     throw error;
   }
 
   if (!data || data.length === 0) {
-    return LOCAL_RECIPES;
+    return DEMO_FALLBACK_ENABLED ? LOCAL_RECIPES : [];
   }
 
   return (data ?? []) as Recipe[];
