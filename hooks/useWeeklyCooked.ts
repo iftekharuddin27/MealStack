@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/client';
 import { readCookHistoryFallback } from '@/lib/offlineCookHistoryStore';
 import { DEMO_FALLBACK_ENABLED } from '@/lib/demoMode';
+import { databaseErrorMessage } from '@/lib/databaseErrors';
 
 export interface WeeklyCookedItem {
   recipe_name: string;
@@ -57,22 +58,18 @@ function summarize(namesAndDates: Array<{ recipe_name: string; cooked_at: string
 }
 
 async function fetchWeeklyCooked(): Promise<WeeklyCookedSummary> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return { total_cooks: 0, unique_recipes: 0, items: [] };
-  }
-
   const weekStartIso = startOfWeek().toISOString();
 
   const { data, error } = await supabase
     .from('cooking_history')
     .select('cooked_at, recipes(name)')
-    .eq('user_id', user.id)
     .gte('cooked_at', weekStartIso)
     .order('cooked_at', { ascending: false });
 
   if (error) {
-    if (!DEMO_FALLBACK_ENABLED) throw new Error(error.message);
+    if (!DEMO_FALLBACK_ENABLED) throw new Error(databaseErrorMessage(error));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { total_cooks: 0, unique_recipes: 0, items: [] };
     const fallback = readCookHistoryFallback(user.id)
       .filter((row) => new Date(row.cooked_at).getTime() >= new Date(weekStartIso).getTime())
       .map((row) => ({ recipe_name: row.recipe_name, cooked_at: row.cooked_at }));

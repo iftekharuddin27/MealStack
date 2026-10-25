@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { parseCookRequest, ValidationError, validationMessage } from '@/lib/apiValidation';
+import { databaseErrorMessage, isOutdatedSchemaError } from '@/lib/databaseErrors';
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -15,10 +16,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
+      const setupRequired = isOutdatedSchemaError(error);
       const conflict = error.code === '22023' || /insufficient/i.test(error.message);
       return NextResponse.json(
-        { error: error.message, code: conflict ? 'insufficient_inventory' : 'cook_failed' },
-        { status: conflict ? 409 : 500 }
+        {
+          error: databaseErrorMessage(error),
+          code: setupRequired ? 'setup_required' : conflict ? 'insufficient_inventory' : 'cook_failed',
+        },
+        { status: setupRequired ? 503 : conflict ? 409 : 500 }
       );
     }
 

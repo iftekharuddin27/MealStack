@@ -79,31 +79,37 @@ const navItems = [
   },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  initialUser: {
+    email: string;
+    fullName: string;
+  };
+}
+
+export default function Sidebar({ initialUser }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: inventory = [] } = useInventory();
-  const [userName, setUserName] = useState('User');
-  const [userEmail, setUserEmail] = useState('');
-  const [editName, setEditName] = useState('');
+  const [userName, setUserName] = useState(initialUser.fullName);
+  const [userEmail] = useState(initialUser.email);
+  const [editName, setEditName] = useState(initialUser.fullName);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuMessage, setMenuMessage] = useState('');
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      const fullName = data.user?.user_metadata?.full_name || 'User';
-      setUserName(fullName);
-      setEditName(fullName);
-      setUserEmail(data.user?.email ?? '');
-    });
-  }, []);
+    for (const group of navItems) {
+      for (const item of group.items) router.prefetch(item.href);
+    }
+  }, [router]);
 
   useEffect(() => {
     setMobileOpen(false);
     setShowDropdown(false);
+    setNavigatingTo(null);
   }, [pathname]);
 
   async function handleLogout() {
@@ -184,6 +190,22 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
+                aria-current={active ? 'page' : undefined}
+                onPointerEnter={() => router.prefetch(item.href)}
+                onFocus={() => router.prefetch(item.href)}
+                onClick={(event) => {
+                  if (
+                    !active &&
+                    event.button === 0 &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.shiftKey &&
+                    !event.altKey
+                  ) {
+                    setNavigatingTo(item.href);
+                  }
+                }}
                 className={`flex items-center gap-2.5 px-5 py-2.5 text-[13px] font-medium border-l-2 transition-all ${
                   active
                     ? 'text-accent bg-green-950/40 border-accent'
@@ -192,8 +214,14 @@ export default function Sidebar() {
               >
                 <span className={active ? 'opacity-100' : 'opacity-60'}>{item.icon}</span>
                 {item.label}
+                {navigatingTo === item.href && (
+                  <span
+                    aria-label={`Opening ${item.label}`}
+                    className="ml-auto h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent/30 border-t-accent"
+                  />
+                )}
                 {item.label === 'Dashboard' && expiringCount > 0 && (
-                  <span className="ml-auto font-mono text-[9px] bg-red-950 text-red-400 border border-red-800/50 px-1.5 py-0.5 rounded-full">
+                  <span className={`${navigatingTo === item.href ? '' : 'ml-auto'} font-mono text-[9px] bg-red-950 text-red-400 border border-red-800/50 px-1.5 py-0.5 rounded-full`}>
                     {expiringCount} exp
                   </span>
                 )}

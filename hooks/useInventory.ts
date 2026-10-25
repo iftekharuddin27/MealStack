@@ -47,19 +47,22 @@ async function responseError(res: Response, fallback: string): Promise<Error> {
 }
 
 async function fetchInventory(): Promise<InventoryItemFlat[]> {
-  const userId = await currentUserId();
   const res = await fetch('/api/inventory');
 
   if (!res.ok) {
-    if (DEMO_FALLBACK_ENABLED && userId && res.status >= 500) {
-      return readInventoryFallback(userId);
+    if (DEMO_FALLBACK_ENABLED && res.status >= 500) {
+      const userId = await currentUserId();
+      if (userId) return readInventoryFallback(userId);
     }
     throw await responseError(res, 'Failed to load inventory.');
   }
 
   const { data } = await res.json();
   const mapped = mapServerInventory(data ?? []);
-  if (DEMO_FALLBACK_ENABLED && userId) writeInventoryFallback(userId, mapped);
+  if (DEMO_FALLBACK_ENABLED) {
+    const userId = await currentUserId();
+    if (userId) writeInventoryFallback(userId, mapped);
+  }
   return mapped;
 }
 

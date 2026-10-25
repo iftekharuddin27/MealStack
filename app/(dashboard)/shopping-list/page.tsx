@@ -1,12 +1,6 @@
-import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
 import ShoppingList from '@/components/shopping/ShoppingList';
 
-export default async function ShoppingListPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
-
+export default function ShoppingListPage() {
   return (
     <div>
       <header className="border-b border-border bg-background-2 px-4 py-5 sm:px-6 lg:px-8">

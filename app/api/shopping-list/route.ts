@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { parseShoppingItem, ValidationError, validationMessage } from '@/lib/apiValidation';
 import { ingredientNamesMatch } from '@/lib/ingredientAliases';
+import { databaseErrorMessage, isOutdatedSchemaError } from '@/lib/databaseErrors';
+
+function databaseFailure(error: { code?: string; message?: string }) {
+  return NextResponse.json(
+    {
+      error: databaseErrorMessage(error),
+      code: isOutdatedSchemaError(error) ? 'setup_required' : 'database_error',
+    },
+    { status: isOutdatedSchemaError(error) ? 503 : 500 }
+  );
+}
 
 async function context() {
   const supabase = await createClient();
@@ -26,7 +37,7 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('checked')
     .order('created_at', { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return databaseFailure(error);
   return NextResponse.json({ data });
 }
 
@@ -40,7 +51,7 @@ export async function POST(req: Request) {
       .select('id, ingredient_name, quantity_base, unit')
       .eq('user_id', user.id)
       .eq('checked', false);
-    if (readError) return NextResponse.json({ error: readError.message }, { status: 500 });
+    if (readError) return databaseFailure(readError);
 
     const existing = (current ?? []).find((item) =>
       item.unit === input.unit && ingredientNamesMatch(item.ingredient_name, input.ingredient_name)
@@ -58,7 +69,7 @@ export async function POST(req: Request) {
           unit: input.unit,
         }).select().single();
     const { data, error } = await mutation;
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return databaseFailure(error);
     return NextResponse.json({ data }, { status: existing ? 200 : 201 });
   } catch (error) {
     return NextResponse.json({ error: validationMessage(error) }, { status: 400 });
@@ -80,7 +91,7 @@ export async function PATCH(req: Request) {
       .eq('user_id', user.id)
       .select()
       .single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return databaseFailure(error);
     return NextResponse.json({ data });
   } catch (error) {
     return NextResponse.json({ error: validationMessage(error) }, { status: 400 });
@@ -93,6 +104,6 @@ export async function DELETE(req: Request) {
   const id = new URL(req.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
   const { error } = await supabase.from('shopping_list').delete().eq('id', id).eq('user_id', user.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return databaseFailure(error);
   return NextResponse.json({ success: true });
 }

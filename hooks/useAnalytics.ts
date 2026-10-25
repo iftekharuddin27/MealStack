@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/client';
+import { databaseErrorMessage } from '@/lib/databaseErrors';
 import type { AnalyticsSummary, Category } from '@/types';
 
 interface InventoryEventRow {
@@ -34,9 +35,6 @@ function weekLabel(date: Date): string {
 }
 
 async function fetchAnalytics(): Promise<AnalyticsSummary> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const since = thirtyDaysAgo.toISOString();
@@ -45,19 +43,17 @@ async function fetchAnalytics(): Promise<AnalyticsSummary> {
     supabase
       .from('inventory_events')
       .select('occurred_at, event_type, value_amount, was_at_risk, category')
-      .eq('user_id', user.id)
       .gte('occurred_at', since)
       .order('occurred_at', { ascending: false }),
     supabase
       .from('cooking_history')
       .select('cooked_at, ingredient_value_used, rescued_value')
-      .eq('user_id', user.id)
       .gte('cooked_at', since)
       .order('cooked_at', { ascending: false }),
   ]);
 
-  if (eventsResult.error) throw new Error(eventsResult.error.message);
-  if (historyResult.error) throw new Error(historyResult.error.message);
+  if (eventsResult.error) throw new Error(databaseErrorMessage(eventsResult.error));
+  if (historyResult.error) throw new Error(databaseErrorMessage(historyResult.error));
 
   const events = (eventsResult.data ?? []).map((row: any): InventoryEventRow => ({
     occurred_at: row.occurred_at,

@@ -2,17 +2,10 @@
 // MealStack · Inventory Manager Page
 // ============================================================
 
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
 import InventoryForm from '@/components/inventory/InventoryForm';
 import InventoryTable from '@/components/inventory/InventoryTable';
 
-export default async function InventoryPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) redirect('/login');
-
+export default function InventoryPage() {
   return (
     <div>
       <div className="border-b border-border bg-background-2 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">

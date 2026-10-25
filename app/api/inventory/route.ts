@@ -9,11 +9,12 @@ import {
   validationMessage,
 } from '@/lib/apiValidation';
 import type { Unit } from '@/types';
+import { databaseErrorMessage, isOutdatedSchemaError } from '@/lib/databaseErrors';
 
 function mapDbError(error: { code?: string; message?: string }) {
-  if (error?.code === 'PGRST205' || error?.message?.includes('schema cache')) {
+  if (isOutdatedSchemaError(error)) {
     return NextResponse.json(
-      { error: 'Database migrations are not up to date.', code: 'setup_required' },
+      { error: databaseErrorMessage(error), code: 'setup_required' },
       { status: 503 }
     );
   }
@@ -40,6 +41,19 @@ export async function GET() {
     .eq('user_id', user.id)
     .order('expires_at', { ascending: true });
 
+  if (error && isOutdatedSchemaError(error)) {
+    const { data: legacyData, error: legacyError } = await supabase
+      .from('user_inventory')
+      .select(`
+        id, quantity, unit, quantity_base, expires_at, added_at,
+        ingredients ( id, name, category, default_unit, price_per_unit )
+      `)
+      .eq('user_id', user.id)
+      .order('expires_at', { ascending: true });
+
+    if (legacyError) return mapDbError(legacyError);
+    return NextResponse.json({ data: legacyData, schema_version: 'legacy' });
+  }
   if (error) return mapDbError(error);
   return NextResponse.json({ data });
 }
@@ -65,7 +79,7 @@ export async function POST(req: Request) {
     ) ?? null;
 
     if (!ingredient) {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('ingredients')
         .insert({
           name: input.ingredient_name,
@@ -76,8 +90,27 @@ export async function POST(req: Request) {
         })
         .select('id, name, category, default_unit')
         .single();
+
+      if (error && isOutdatedSchemaError(error)) {
+        const legacyInsert = await supabase
+          .from('ingredients')
+          .insert({
+            name: input.ingredient_name,
+            category: input.category,
+            default_unit: getBaseUnit(input.unit),
+            price_per_unit: 0,
+          })
+          .select('id, name, category, default_unit')
+          .single();
+        data = legacyInsert.data;
+        error = legacyInsert.error;
+      }
       if (error) return mapDbError(error);
       ingredient = data;
+    }
+
+    if (!ingredient) {
+      return NextResponse.json({ error: 'Ingredient could not be created.' }, { status: 500 });
     }
 
     if (!areUnitsCompatible(input.unit, ingredient.default_unit as Unit)) {
@@ -87,7 +120,7 @@ export async function POST(req: Request) {
     }
 
     const quantityBase = toBase(input.quantity, input.unit);
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('user_inventory')
       .insert({
         user_id: user.id,
@@ -104,6 +137,48 @@ export async function POST(req: Request) {
       .select()
       .single();
 
+    if (error && isOutdatedSchemaError(error)) {
+      const { data: existing, error: existingError } = await supabase
+        .from('user_inventory')
+        .select('id, quantity_base, unit, expires_at')
+        .eq('user_id', user.id)
+        .eq('ingredient_id', ingredient.id)
+        .maybeSingle();
+      if (existingError) return mapDbError(existingError);
+
+      const legacyMutation = existing
+        ? supabase
+            .from('user_inventory')
+            .update({
+              quantity: (Number(existing.quantity_base) + quantityBase) /
+                toBase(1, existing.unit as Unit),
+              unit: existing.unit,
+              quantity_base: Number(existing.quantity_base) + quantityBase,
+              expires_at: new Date(existing.expires_at) < new Date(input.expires_at)
+                ? existing.expires_at
+                : input.expires_at,
+            })
+            .eq('id', existing.id)
+            .eq('user_id', user.id)
+            .select()
+            .single()
+        : supabase
+            .from('user_inventory')
+            .insert({
+              user_id: user.id,
+              ingredient_id: ingredient.id,
+              quantity: input.quantity,
+              unit: input.unit,
+              quantity_base: quantityBase,
+              expires_at: input.expires_at,
+            })
+            .select()
+            .single();
+      const legacyResult = await legacyMutation;
+      data = legacyResult.data;
+      error = legacyResult.error;
+    }
+
     if (error) return mapDbError(error);
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
@@ -117,12 +192,23 @@ export async function PATCH(req: Request) {
 
   try {
     const input = parseUpdateInventory(await req.json());
-    const { data: existing, error: readError } = await supabase
+    let { data: existing, error: readError } = await supabase
       .from('user_inventory')
-      .select('id, purchased_at, ingredients(default_unit)')
+      .select('id, purchased_at, added_at, ingredients(default_unit)')
       .eq('id', input.id)
       .eq('user_id', user.id)
       .single();
+
+    if (readError && isOutdatedSchemaError(readError)) {
+      const legacyRead = await supabase
+        .from('user_inventory')
+        .select('id, added_at, ingredients(default_unit)')
+        .eq('id', input.id)
+        .eq('user_id', user.id)
+        .single();
+      existing = legacyRead.data as typeof existing;
+      readError = legacyRead.error;
+    }
     if (readError || !existing) {
       return NextResponse.json({ error: 'Inventory lot not found.' }, { status: 404 });
     }
@@ -133,12 +219,13 @@ export async function PATCH(req: Request) {
     if (!ingredient || !areUnitsCompatible(input.unit, ingredient.default_unit as Unit)) {
       throw new ValidationError('The selected unit is incompatible with this ingredient.');
     }
-    if (new Date(input.expires_at) <= new Date(existing.purchased_at)) {
+    const purchaseDate = existing.purchased_at ?? existing.added_at;
+    if (new Date(input.expires_at) <= new Date(purchaseDate)) {
       throw new ValidationError('Expiry must be later than the purchase date.');
     }
 
     const quantityBase = toBase(input.quantity, input.unit);
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('user_inventory')
       .update({
         quantity: input.quantity,
@@ -153,6 +240,23 @@ export async function PATCH(req: Request) {
       .eq('user_id', user.id)
       .select()
       .single();
+
+    if (error && isOutdatedSchemaError(error)) {
+      const legacyUpdate = await supabase
+        .from('user_inventory')
+        .update({
+          quantity: input.quantity,
+          unit: input.unit,
+          quantity_base: quantityBase,
+          expires_at: input.expires_at,
+        })
+        .eq('id', input.id)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+      data = legacyUpdate.data;
+      error = legacyUpdate.error;
+    }
 
     if (error) return mapDbError(error);
     return NextResponse.json({ data });

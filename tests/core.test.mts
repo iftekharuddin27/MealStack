@@ -4,6 +4,7 @@ import { areUnitsCompatible, getBaseUnit, toBase } from '../lib/unitNormalizer.t
 import { canonicalIngredientKey } from '../lib/ingredientAliases.ts';
 import { getExpiryStatus } from '../lib/expiryLogic.ts';
 import { subsetMatcher } from '../lib/subsetMatcher.ts';
+import { databaseErrorMessage, isOutdatedSchemaError } from '../lib/databaseErrors.ts';
 import type { InventoryItemFlat, Recipe } from '../types/index.ts';
 
 test('normalizes quantities without mixing dimensions', () => {
@@ -19,6 +20,13 @@ test('canonicalizes supported ingredient aliases', () => {
   assert.equal(canonicalIngredientKey(' Rice '), 'basmati rice');
   assert.equal(canonicalIngredientKey('EGG'), 'eggs');
   assert.equal(canonicalIngredientKey('Tea Leaves'), 'tea leaf');
+});
+
+test('recognizes old database schemas without exposing raw SQL errors', () => {
+  const error = { code: '42703', message: 'column user_inventory.initial_quantity_base does not exist' };
+  assert.equal(isOutdatedSchemaError(error), true);
+  assert.equal(databaseErrorMessage(error).includes('initial_quantity_base'), false);
+  assert.match(databaseErrorMessage(error), /migration 002_professional_workflows\.sql/);
 });
 
 test('classifies expired, critical, warning, and fresh inventory', () => {

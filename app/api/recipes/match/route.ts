@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { subsetMatcher } from '@/lib/subsetMatcher';
 import type { InventoryItemFlat, Recipe, Unit, Category } from '@/types';
+import { databaseErrorMessage, isOutdatedSchemaError } from '@/lib/databaseErrors';
 
 export async function GET() {
   const supabase = await createClient();
@@ -18,7 +19,7 @@ export async function GET() {
   }
 
   // Fetch user inventory
-  const { data: invData, error: invErr } = await supabase
+  let { data: invData, error: invErr } = await supabase
     .from('user_inventory')
     .select(`
       id, quantity, unit, quantity_base, initial_quantity_base, expires_at,
@@ -27,7 +28,24 @@ export async function GET() {
     `)
     .eq('user_id', user.id);
 
-  if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 });
+  if (invErr && isOutdatedSchemaError(invErr)) {
+    const legacyResult = await supabase
+      .from('user_inventory')
+      .select(`
+        id, quantity, unit, quantity_base, expires_at, added_at,
+        ingredients ( name, category, price_per_unit )
+      `)
+      .eq('user_id', user.id);
+    invData = legacyResult.data as typeof invData;
+    invErr = legacyResult.error;
+  }
+
+  if (invErr) {
+    return NextResponse.json(
+      { error: databaseErrorMessage(invErr, 'Inventory could not be loaded.') },
+      { status: isOutdatedSchemaError(invErr) ? 503 : 500 }
+    );
+  }
 
   const inventory: InventoryItemFlat[] = (invData ?? []).map((row: any) => ({
     id: row.id,
