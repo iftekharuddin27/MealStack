@@ -85,3 +85,17 @@ export function formatQty(qty: number, unit: Unit): string {
 export function areUnitsCompatible(unitA: Unit, unitB: Unit): boolean {
   return getUnitDimension(unitA) === getUnitDimension(unitB);
 }
+
+export function getConversionHint(unit: Unit): string {
+  const hints: Record<Unit, string> = {
+    g: '1000 g = 1 kg',
+    kg: '1 kg = 1000 g',
+    ml: '1000 ml = 1 l',
+    l: '1 l = 1000 ml',
+    tsp: '1 tsp = 5 ml',
+    tbsp: '1 tbsp = 15 ml',
+    cup: '1 cup = 240 ml',
+    pcs: 'Pieces are matched by count',
+  };
+  return hints[unit];
+}

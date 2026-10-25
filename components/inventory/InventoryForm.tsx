@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from 'react';
 import { useAddInventoryItem } from '@/hooks/useInventory';
+import { useIngredientCatalog } from '@/hooks/useRecipeCatalog';
 import { EXPIRY_DAYS } from '@/lib/expiryLogic';
-import { getCompatibleUnits } from '@/lib/unitNormalizer';
-import type { Category, StorageLocation, Unit } from '@/types';
+import { getCompatibleUnits, getConversionHint } from '@/lib/unitNormalizer';
+import type { Category, IngredientSuggestion, StorageLocation, Unit } from '@/types';
 
 const ALL_UNITS: Unit[] = ['g', 'kg', 'ml', 'l', 'pcs', 'tsp', 'tbsp', 'cup'];
 const CATEGORIES: Array<{ value: Category; label: string }> = [
@@ -20,19 +21,19 @@ const LOCATIONS: Array<{ value: StorageLocation; label: string }> = [
   { value: 'pantry', label: 'Pantry' },
   { value: 'counter', label: 'Counter' },
 ];
-const COMMON_INGREDIENTS: Array<{ name: string; category: Category; unit: Unit }> = [
-  { name: 'Basmati Rice', category: 'grain', unit: 'g' },
-  { name: 'Whole Milk', category: 'dairy', unit: 'ml' },
-  { name: 'Tea Leaf', category: 'spice', unit: 'g' },
-  { name: 'Sugar', category: 'spice', unit: 'g' },
-  { name: 'Eggs', category: 'protein', unit: 'pcs' },
-  { name: 'Olive oil', category: 'spice', unit: 'ml' },
-  { name: 'Salt', category: 'spice', unit: 'g' },
-  { name: 'Garlic', category: 'veg', unit: 'pcs' },
-  { name: 'Butter', category: 'dairy', unit: 'g' },
-  { name: 'Spaghetti', category: 'grain', unit: 'g' },
-  { name: 'Chicken Breast', category: 'protein', unit: 'g' },
-  { name: 'Spinach', category: 'veg', unit: 'g' },
+const COMMON_INGREDIENTS: IngredientSuggestion[] = [
+  { id: 'common-rice', name: 'Basmati Rice', category: 'grain', unit: 'g' },
+  { id: 'common-milk', name: 'Whole Milk', category: 'dairy', unit: 'ml' },
+  { id: 'common-tea', name: 'Tea Leaf', category: 'spice', unit: 'g' },
+  { id: 'common-sugar', name: 'Sugar', category: 'spice', unit: 'g' },
+  { id: 'common-eggs', name: 'Eggs', category: 'protein', unit: 'pcs' },
+  { id: 'common-oil', name: 'Olive oil', category: 'spice', unit: 'ml' },
+  { id: 'common-salt', name: 'Salt', category: 'spice', unit: 'g' },
+  { id: 'common-garlic', name: 'Garlic', category: 'veg', unit: 'pcs' },
+  { id: 'common-butter', name: 'Butter', category: 'dairy', unit: 'g' },
+  { id: 'common-spaghetti', name: 'Spaghetti', category: 'grain', unit: 'g' },
+  { id: 'common-chicken', name: 'Chicken Breast', category: 'protein', unit: 'g' },
+  { id: 'common-spinach', name: 'Spinach', category: 'veg', unit: 'g' },
 ];
 
 function dateInputValue(date: Date): string {
@@ -57,19 +58,37 @@ export default function InventoryForm() {
   const [purchasePrice, setPurchasePrice] = useState('');
   const [message, setMessage] = useState('');
   const addItem = useAddInventoryItem();
+  const { data: catalogIngredients = [], isLoading: catalogLoading } = useIngredientCatalog();
 
-  const knownIngredient = useMemo(() => COMMON_INGREDIENTS.find((item) =>
+  const ingredientOptions = useMemo(() => {
+    const merged = new Map<string, IngredientSuggestion>();
+    for (const item of [...COMMON_INGREDIENTS, ...catalogIngredients]) {
+      const key = item.name.toLowerCase();
+      if (!merged.has(key)) merged.set(key, item);
+    }
+    return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [catalogIngredients]);
+
+  const knownIngredient = useMemo(() => ingredientOptions.find((item) =>
     item.name.toLowerCase() === name.trim().toLowerCase()
-  ), [name]);
+  ), [ingredientOptions, name]);
   const allowedUnits = knownIngredient ? getCompatibleUnits(knownIngredient.unit) : ALL_UNITS;
   const inputClass = 'w-full rounded-lg border border-border bg-background-3 px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20';
 
-  function chooseIngredient(item: typeof COMMON_INGREDIENTS[number]) {
+  function chooseIngredient(item: IngredientSuggestion) {
     setName(item.name);
     setCategory(item.category);
     setUnit(item.unit);
     setExpiresAt(defaultExpiry(item.category));
     setLocation(item.category === 'grain' || item.category === 'spice' ? 'pantry' : 'fridge');
+  }
+
+  function changeIngredientName(value: string) {
+    setName(value);
+    const exact = ingredientOptions.find((item) =>
+      item.name.toLowerCase() === value.trim().toLowerCase()
+    );
+    if (exact) chooseIngredient(exact);
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -112,9 +131,9 @@ export default function InventoryForm() {
 
         <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Field id="ingredient-name" label="Ingredient">
-            <input id="ingredient-name" value={name} onChange={(event) => setName(event.target.value)} list="ingredient-suggestions" required className={inputClass} placeholder="e.g. Basmati Rice" />
+            <input id="ingredient-name" value={name} onChange={(event) => changeIngredientName(event.target.value)} list="ingredient-suggestions" required className={inputClass} placeholder="Search 900+ ingredients" autoComplete="off" />
             <datalist id="ingredient-suggestions">
-              {COMMON_INGREDIENTS.map((item) => <option key={item.name} value={item.name} />)}
+              {ingredientOptions.map((item) => <option key={item.id} value={item.name} />)}
             </datalist>
           </Field>
           <Field id="inventory-quantity" label="Quantity">
@@ -155,7 +174,10 @@ export default function InventoryForm() {
             {addItem.isPending ? 'Adding…' : '+ Add lot'}
           </button>
           <span className="font-mono text-[11px] text-muted-foreground">
-            Default shelf life: {EXPIRY_DAYS[category]} days · You can override it
+            {getConversionHint(unit)} · Default shelf life: {EXPIRY_DAYS[category]} days
+          </span>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {catalogLoading ? 'Syncing recipe ingredients…' : `${catalogIngredients.length.toLocaleString()} recipe ingredients available`}
           </span>
           {message && <span role="status" className={`text-xs ${addItem.isError ? 'text-red-400' : 'text-green-400'}`}>{message}</span>}
         </div>

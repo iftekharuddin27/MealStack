@@ -14,6 +14,12 @@ const ALIAS_MAP: Record<string, string[]> = {
   'chicken breast': ['chicken'],
   'black pepper': ['pepper'],
   eggs: ['egg'],
+  garlic: ['garlic clove', 'garlic cloves'],
+  onion: ['onions'],
+  tomato: ['tomatoes', 'chopped tomatoes', 'plum tomatoes'],
+  potato: ['potatoes'],
+  chilli: ['chili', 'chillies', 'chilies', 'red chilli', 'red chili'],
+  pasta: ['spaghetti', 'penne', 'penne rigate', 'macaroni', 'fusilli'],
 };
 
 export function normalizeIngredientKey(name: string): string {

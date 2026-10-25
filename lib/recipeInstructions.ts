@@ -50,6 +50,8 @@ const INSTRUCTIONS_BY_NAME: Record<string, string[]> = {
 };
 
 export function getRecipeInstructions(recipe: Recipe): string[] {
+  if (recipe.instructions?.length) return recipe.instructions;
+
   const key = recipe.name.toLowerCase().trim();
   const predefined = INSTRUCTIONS_BY_NAME[key];
   if (predefined) return predefined;

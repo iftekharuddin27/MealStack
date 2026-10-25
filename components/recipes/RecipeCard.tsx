@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import CookModal from './CookModal';
 import { useAddShoppingItems } from '@/hooks/useShoppingList';
 import type { MissingIngredient } from '@/lib/subsetMatcher';
@@ -28,6 +29,7 @@ export default function RecipeCard({
   const [modalOpen, setModalOpen] = useState(false);
   const [shoppingMessage, setShoppingMessage] = useState('');
   const addShoppingItems = useAddShoppingItems();
+  const external = recipe.source === 'themealdb';
 
   async function addMissingToShoppingList() {
     try {
@@ -47,7 +49,15 @@ export default function RecipeCard({
 
   return (
     <article className="card overflow-hidden transition-colors hover:border-border-2">
-      <div className={`flex h-24 items-center justify-center bg-gradient-to-br text-5xl ${cookable ? 'from-green-950 to-teal-950' : 'from-background-3 to-surface'}`} aria-hidden="true">{recipe.emoji}</div>
+      {recipe.image_url ? (
+        <div className="relative h-40 overflow-hidden bg-background-3">
+          <Image src={recipe.image_url} alt="" fill sizes="(min-width: 1024px) 40vw, 90vw" className="object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+          <span className="absolute bottom-2 left-3 rounded bg-black/70 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-white">TheMealDB</span>
+        </div>
+      ) : (
+        <div className={`flex h-24 items-center justify-center bg-gradient-to-br text-5xl ${cookable ? 'from-green-950 to-teal-950' : 'from-background-3 to-surface'}`} aria-hidden="true">{recipe.emoji}</div>
+      )}
       <div className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-semibold">{recipe.name}</h3>
@@ -57,6 +67,7 @@ export default function RecipeCard({
           <span>Time: {recipe.time_minutes} min</span>
           <span>Serves {recipe.servings}</span>
           <span className={DIFFICULTY_COLOR[recipe.difficulty]}>Difficulty: {recipe.difficulty}</span>
+          {recipe.area && <span>{recipe.area}</span>}
         </div>
         <ul className="flex flex-wrap gap-1.5" aria-label="Ingredients">
           {recipe.recipe_ingredients.map((ingredient) => {
@@ -66,7 +77,9 @@ export default function RecipeCard({
         </ul>
 
         {cookable ? (
-          <button onClick={() => setModalOpen(true)} className="w-full rounded-lg bg-accent py-2.5 text-[12px] font-bold tracking-wide text-background transition hover:bg-accent-hover">Cook recipe · FIFO deduction</button>
+          <button onClick={() => setModalOpen(true)} className="w-full rounded-lg bg-accent py-2.5 text-[12px] font-bold tracking-wide text-background transition hover:bg-accent-hover">
+            {external ? 'View recipe · ingredients available' : 'Cook recipe · FIFO deduction'}
+          </button>
         ) : (
           <div className="space-y-2">
             <ul className="space-y-1 text-xs text-red-300">
@@ -78,6 +91,11 @@ export default function RecipeCard({
                 </li>
               ))}
             </ul>
+            {external && (
+              <button onClick={() => setModalOpen(true)} className="w-full rounded-lg border border-border py-2.5 text-xs font-medium text-foreground hover:border-accent">
+                View recipe and instructions
+              </button>
+            )}
             <button onClick={addMissingToShoppingList} disabled={addShoppingItems.isPending} className="w-full rounded-lg border border-accent/60 py-2.5 text-xs font-medium text-accent hover:bg-green-950/30 disabled:opacity-60">{addShoppingItems.isPending ? 'Adding…' : 'Add missing items to shopping list'}</button>
             {shoppingMessage && <p role="status" className="text-xs text-muted-foreground">{shoppingMessage}</p>}
           </div>

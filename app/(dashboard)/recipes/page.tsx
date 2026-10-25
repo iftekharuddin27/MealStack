@@ -12,7 +12,7 @@ export default function RecipesPage() {
           Recipe <em className="text-accent not-italic">Feed</em>
         </h1>
         <p className="mt-1 font-mono text-xs text-subtle">
-          Recipes ranked by what is already in your kitchen · Expired stock excluded
+          Search worldwide recipes · Match your inventory · Scale from one serving to a crowd
         </p>
       </div>
       <div className="p-4 sm:p-6 lg:p-8">

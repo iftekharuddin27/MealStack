@@ -34,6 +34,8 @@ interface InventoryAggregate {
   earliestExpiry: number;
 }
 
+const QUANTITY_EPSILON = 0.000_001;
+
 function mapKey(name: string, unit: Unit): string {
   return `${canonicalIngredientKey(name)}:${getUnitDimension(unit)}`;
 }
@@ -87,8 +89,11 @@ export function subsetMatcher(
     let requiredTotal = 0;
 
     for (const recipeIngredient of recipe.recipe_ingredients) {
+      if (recipeIngredient.optional) continue;
       const unit = recipeIngredient.unit as Unit;
-      const needed = toBase(recipeIngredient.quantity, unit);
+      const needed = Number(recipeIngredient.quantity_base) > 0
+        ? Number(recipeIngredient.quantity_base)
+        : toBase(recipeIngredient.quantity, unit);
       const available = inventoryMap.get(
         mapKey(recipeIngredient.ingredient.name, unit)
       )?.available ?? 0;
@@ -102,14 +107,14 @@ export function subsetMatcher(
       requiredTotal += needed;
       availableTotal += Math.min(available, needed);
 
-      if (available < needed) {
+      if (available + QUANTITY_EPSILON < needed) {
         missing.push({
           ingredient_id: recipeIngredient.ingredient_id,
           name: recipeIngredient.ingredient.name,
           required: recipeIngredient.quantity,
           required_unit: unit,
           available,
-          shortfall: needed - available,
+          shortfall: Math.max(0, needed - available),
           base_unit: getBaseUnit(unit),
           reason: hasWrongDimension
             ? 'incompatible_unit'

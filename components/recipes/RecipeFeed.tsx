@@ -2,14 +2,32 @@
 
 import { useMemo, useState } from 'react';
 import { useInventory } from '@/hooks/useInventory';
+import { useExternalRecipes } from '@/hooks/useRecipeCatalog';
 import { useRecipeMatch } from '@/hooks/useRecipeMatch';
+import { subsetMatcher, type MissingIngredient } from '@/lib/subsetMatcher';
 import RecipeCard from './RecipeCard';
+import type { Recipe } from '@/types';
+
+const CATALOG_CATEGORIES = [
+  'Breakfast', 'Chicken', 'Beef', 'Lamb', 'Goat', 'Vegetarian', 'Vegan',
+  'Pasta', 'Seafood', 'Side', 'Starter', 'Dessert',
+] as const;
+
+interface CatalogCard {
+  recipe: Recipe;
+  cookable: boolean;
+  missing: MissingIngredient[];
+  availableRatio: number;
+}
 
 export default function RecipeFeed() {
   const { data: inventory = [], isLoading: inventoryLoading, error: inventoryError } = useInventory();
   const { result, isLoading: recipeLoading, error: recipeError } = useRecipeMatch(inventory);
   const [query, setQuery] = useState('');
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [category, setCategory] = useState<(typeof CATALOG_CATEGORIES)[number]>('Breakfast');
   const [view, setView] = useState<'all' | 'cookable' | 'closest'>('all');
+  const externalRecipes = useExternalRecipes(catalogQuery, category);
 
   const normalizedQuery = query.trim().toLowerCase();
   const matched = useMemo(() => (result?.matched ?? []).filter((recipe) =>
@@ -21,6 +39,30 @@ export default function RecipeFeed() {
     || recipe.recipe_ingredients.some((item) => item.ingredient.name.toLowerCase().includes(normalizedQuery))
   ), [result, normalizedQuery]);
 
+  const catalogCards = useMemo<CatalogCard[]>(() => {
+    const catalogResult = subsetMatcher(externalRecipes.data ?? [], inventory);
+    const cookable = catalogResult.matched.map((recipe) => ({
+      recipe, cookable: true, missing: [], availableRatio: 1,
+    }));
+    const closest = catalogResult.unmatched.map(({ recipe, missing, availableRatio }) => ({
+      recipe, cookable: false, missing, availableRatio,
+    }));
+    if (view === 'cookable') return cookable;
+    if (view === 'closest') return closest;
+    return [...cookable, ...closest];
+  }, [externalRecipes.data, inventory, view]);
+
+  function submitCatalogSearch(event: React.FormEvent) {
+    event.preventDefault();
+    setCatalogQuery(query.trim());
+  }
+
+  function chooseCategory(next: (typeof CATALOG_CATEGORIES)[number]) {
+    setCategory(next);
+    setQuery('');
+    setCatalogQuery('');
+  }
+
   if (inventoryLoading || recipeLoading) {
     return <div className="py-16 text-center font-mono text-xs text-muted-foreground" aria-live="polite">Matching recipes to non-expired inventory…</div>;
   }
@@ -28,29 +70,65 @@ export default function RecipeFeed() {
   if (error) return <div role="alert" className="card border-red-900 px-6 py-10 text-sm text-red-300">Recipes could not be loaded: {error.message}</div>;
 
   return (
-    <div className="space-y-8">
-      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+    <div className="space-y-10">
+      <form onSubmit={submitCatalogSearch} className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <label htmlFor="recipe-search" className="sr-only">Search recipes or ingredients</label>
-        <input id="recipe-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search recipes or ingredients…" className="min-w-0 flex-1 rounded-lg border border-border bg-background-3 px-3 py-2 text-sm outline-none focus:border-accent" />
+        <input id="recipe-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search meals or ingredients worldwide…" className="min-w-0 flex-1 rounded-lg border border-border bg-background-3 px-3 py-2 text-sm outline-none focus:border-accent" />
+        <button type="submit" className="rounded-lg bg-accent px-4 py-2 text-xs font-bold text-background hover:bg-accent-hover">Search library</button>
         <div className="flex gap-2" role="group" aria-label="Recipe view">
           {(['all', 'cookable', 'closest'] as const).map((option) => (
-            <button key={option} onClick={() => setView(option)} aria-pressed={view === option} className={`rounded-lg border px-3 py-2 text-xs capitalize ${view === option ? 'border-accent bg-green-950/40 text-accent' : 'border-border text-muted-foreground'}`}>
+            <button type="button" key={option} onClick={() => setView(option)} aria-pressed={view === option} className={`rounded-lg border px-3 py-2 text-xs capitalize ${view === option ? 'border-accent bg-green-950/40 text-accent' : 'border-border text-muted-foreground'}`}>
               {option}
             </button>
           ))}
         </div>
-      </div>
+      </form>
+
+      <section aria-labelledby="catalog-title">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div>
+            <h2 id="catalog-title" className="font-head text-xl">Global recipe library</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Every recipe is normalized and compared with your inventory.</p>
+          </div>
+          <span className="rounded border border-border px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Powered by TheMealDB</span>
+          <div className="h-px min-w-12 flex-1 bg-border" />
+        </div>
+
+        <div className="mb-5 flex flex-wrap gap-2" role="group" aria-label="Recipe categories">
+          {CATALOG_CATEGORIES.map((option) => (
+            <button key={option} type="button" onClick={() => chooseCategory(option)} aria-pressed={!catalogQuery && category === option} className={`rounded-full border px-3 py-1.5 text-xs ${!catalogQuery && category === option ? 'border-accent bg-green-950/40 text-accent' : 'border-border text-muted-foreground hover:border-border-2 hover:text-foreground'}`}>
+              {option}
+            </button>
+          ))}
+        </div>
+
+        {externalRecipes.isLoading && <div className="card py-12 text-center font-mono text-xs text-muted-foreground">Loading recipes from TheMealDB…</div>}
+        {externalRecipes.error && <div role="alert" className="card border-amber-900 px-5 py-4 text-sm text-amber-300">The global library is temporarily unavailable. Your MealStack recipes still work.</div>}
+        {!externalRecipes.isLoading && !externalRecipes.error && catalogCards.length === 0 && (
+          <div className="card px-5 py-10 text-center text-sm text-muted-foreground">No recipes found for this search and view. Try another meal, ingredient, or category.</div>
+        )}
+        {catalogCards.length > 0 && (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {catalogCards.map(({ recipe, cookable, missing, availableRatio }) => (
+              <RecipeCard key={recipe.id} recipe={recipe} inventory={inventory} cookable={cookable} missingIngredients={missing} availableRatio={availableRatio} />
+            ))}
+          </div>
+        )}
+        <p className="mt-3 text-right text-[10px] text-muted-foreground">
+          Recipe data and images from <a href="https://www.themealdb.com" target="_blank" rel="noreferrer" className="text-accent hover:underline">TheMealDB</a>.
+        </p>
+      </section>
 
       {view !== 'closest' && (
         <section aria-labelledby="matched-title">
           <div className="mb-5 flex items-center gap-3">
-            <h2 id="matched-title" className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">Cookable now · expiry-prioritized</h2>
+            <h2 id="matched-title" className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">MealStack recipes · cookable now</h2>
             <span className="font-mono text-[11px] text-teal-400">{matched.length} available</span>
             <div className="h-px flex-1 bg-border" />
           </div>
           {matched.length === 0 ? (
             <div className="card px-6 py-8 text-center">
-              <p className="text-sm text-muted-foreground">No recipes match your non-expired inventory.</p>
+              <p className="text-sm text-muted-foreground">No saved recipes match your non-expired inventory.</p>
               <a href="/inventory" className="mt-3 inline-block rounded-lg border border-accent px-3 py-2 text-xs text-accent">Add inventory</a>
             </div>
           ) : (
@@ -62,7 +140,7 @@ export default function RecipeFeed() {
       {view !== 'cookable' && unmatched.length > 0 && (
         <section aria-labelledby="closest-title">
           <div className="mb-5 flex items-center gap-3">
-            <h2 id="closest-title" className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">Closest matches · best coverage first</h2>
+            <h2 id="closest-title" className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">Saved recipes · closest matches</h2>
             <div className="h-px flex-1 bg-border" />
           </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

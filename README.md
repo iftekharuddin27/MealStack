@@ -13,6 +13,7 @@
 | Styling | Tailwind CSS · Dark-first design |
 | Components | Lucide Icons · Recharts |
 | Backend | Supabase (PostgreSQL + Auth) |
+| Recipe catalog | TheMealDB API |
 | State | TanStack Query v5 (optimistic updates) |
 | Fonts | DM Serif Display · Syne · DM Mono |
 
@@ -170,6 +171,12 @@ Adding an item to inventory feels instant:
 
 No dashboard metric is generated from a fixed percentage or heuristic.
 
+### 7. Global Recipe Catalog
+
+The recipe feed connects to TheMealDB through a cached server-side proxy. Users can search meals or ingredients, browse everyday categories, open full instructions and images, and compare normalized recipe requirements with their live inventory. The inventory form also loads the provider's ingredient catalog for autocomplete and sensible category/unit defaults.
+
+External measures are normalized into MealStack's mass, volume, and count dimensions. Equivalent units such as `1 kg` and `1000 g`, or `1 l` and `1000 ml`, match exactly. Common dry volume measures use ingredient-aware density estimates; unrelated dimensions are intentionally not treated as interchangeable.
+
 ---
 
 ## Database Schema
@@ -215,6 +222,8 @@ cp .env.example .env.local
 Set `NEXT_PUBLIC_SUPABASE_URL` to the Project URL and
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` to the project's anon key. Restart the dev
 server after changing environment variables.
+
+`THEMEALDB_API_KEY=1` uses TheMealDB's educational/development key. Replace it with a supporter key for a public production product under TheMealDB's current API terms.
 
 
 ### 3. Start the dev server

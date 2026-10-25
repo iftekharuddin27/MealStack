@@ -5,7 +5,8 @@ import { canonicalIngredientKey } from '../lib/ingredientAliases.ts';
 import { getExpiryStatus } from '../lib/expiryLogic.ts';
 import { subsetMatcher } from '../lib/subsetMatcher.ts';
 import { databaseErrorMessage, isOutdatedSchemaError } from '../lib/databaseErrors.ts';
-import type { InventoryItemFlat, Recipe } from '../types/index.ts';
+import { mealDbToRecipe, parseMealDbMeasure } from '../lib/recipeCatalog.ts';
+import type { InventoryItemFlat, Recipe, Unit } from '../types/index.ts';
 
 test('normalizes quantities without mixing dimensions', () => {
   assert.equal(toBase(1.5, 'kg'), 1500);
@@ -16,10 +17,48 @@ test('normalizes quantities without mixing dimensions', () => {
   assert.equal(areUnitsCompatible('pcs', 'g'), false);
 });
 
+test('matches equivalent quantities across every supported unit family', () => {
+  assert.equal(toBase(1, 'kg'), toBase(1000, 'g'));
+  assert.equal(toBase(1, 'l'), toBase(1000, 'ml'));
+  assert.equal(toBase(1, 'cup'), toBase(240, 'ml'));
+  assert.equal(toBase(1, 'tbsp'), toBase(15, 'ml'));
+  assert.equal(toBase(1, 'tsp'), toBase(5, 'ml'));
+
+  const kgInventory = lot({ qty: 1, unit: 'kg', quantity_base: 1000 });
+  const gramRecipe = recipe('unit-r1', 'Rice for four', 'Basmati Rice', 1000, 'g');
+  assert.equal(subsetMatcher([gramRecipe], [kgInventory]).matched.length, 1);
+
+  const gramInventory = lot({ qty: 1000, unit: 'g', quantity_base: 1000 });
+  const kgRecipe = recipe('unit-r2', 'Rice by kilogram', 'Basmati Rice', 1, 'kg');
+  assert.equal(subsetMatcher([kgRecipe], [gramInventory]).matched.length, 1);
+});
+
+test('parses external recipe measures into MealStack base dimensions', () => {
+  assert.deepEqual(parseMealDbMeasure('1 1/2 cups', 'Milk'), {
+    quantity: 1.5, unit: 'cup', quantity_base: 360, optional: false,
+  });
+  assert.equal(parseMealDbMeasure('1 pound', 'Pasta').quantity_base, 453.592);
+  assert.equal(parseMealDbMeasure('3 cloves', 'Garlic').unit, 'pcs');
+  assert.deepEqual(parseMealDbMeasure('1/2 tsp', 'Salt'), {
+    quantity: 3, unit: 'g', quantity_base: 3, optional: false,
+  });
+
+  const parsed = mealDbToRecipe({
+    idMeal: '123', strMeal: 'Test meal', strCategory: 'Breakfast',
+    strInstructions: 'Prepare ingredients. Cook until ready.',
+    strIngredient1: 'Milk', strMeasure1: '1 litre',
+  });
+  assert.equal(parsed.source, 'themealdb');
+  assert.equal(parsed.recipe_ingredients[0].quantity_base, 1000);
+  assert.equal(mealDbToRecipe({ idMeal: '124', strMeal: 'Vegetable', strIngredient1: 'Egg Plants', strMeasure1: '2' }).recipe_ingredients[0].ingredient.category, 'veg');
+});
+
 test('canonicalizes supported ingredient aliases', () => {
   assert.equal(canonicalIngredientKey(' Rice '), 'basmati rice');
   assert.equal(canonicalIngredientKey('EGG'), 'eggs');
   assert.equal(canonicalIngredientKey('Tea Leaves'), 'tea leaf');
+  assert.equal(canonicalIngredientKey('Penne Rigate'), 'pasta');
+  assert.equal(canonicalIngredientKey('Tomatoes'), 'tomato');
 });
 
 test('recognizes old database schemas without exposing raw SQL errors', () => {
@@ -37,7 +76,7 @@ test('classifies expired, critical, warning, and fresh inventory', () => {
   assert.equal(getExpiryStatus(new Date(now + 72 * 60 * 60 * 1000)), 'ok');
 });
 
-function recipe(id: string, name: string, ingredientName: string, quantity: number, unit: 'g' | 'ml' | 'pcs'): Recipe {
+function recipe(id: string, name: string, ingredientName: string, quantity: number, unit: Unit): Recipe {
   return {
     id,
     name,

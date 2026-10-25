@@ -56,6 +56,8 @@ export interface RecipeIngredient {
   quantity: number;
   unit: Unit;
   quantity_base: number;
+  optional?: boolean;
+  original_measure?: string;
 }
 
 export interface Recipe {
@@ -68,6 +70,20 @@ export interface Recipe {
   difficulty: Difficulty;
   recipe_ingredients: RecipeIngredient[];
   created_at: string;
+  source?: 'mealstack' | 'themealdb';
+  source_url?: string | null;
+  image_url?: string | null;
+  instructions?: string[];
+  area?: string | null;
+  meal_category?: string | null;
+}
+
+export interface IngredientSuggestion {
+  id: string;
+  name: string;
+  category: Category;
+  unit: Unit;
+  image_url?: string | null;
 }
 
 // ── Cooking history ────────────────────────────────────────
