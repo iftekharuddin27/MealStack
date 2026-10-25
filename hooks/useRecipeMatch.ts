@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase/client';
 import { subsetMatcher, type MatchResult } from '@/lib/subsetMatcher';
 import { LOCAL_RECIPES } from '@/lib/localRecipes';
 import { DEMO_FALLBACK_ENABLED } from '@/lib/demoMode';
+import { mergeSavedAndEverydayRecipes } from '@/lib/recipeImages';
 import type { InventoryItemFlat, Recipe } from '@/types';
 
 async function fetchAllRecipes(): Promise<Recipe[]> {
@@ -35,10 +36,10 @@ async function fetchAllRecipes(): Promise<Recipe[]> {
   }
 
   if (!data || data.length === 0) {
-    return DEMO_FALLBACK_ENABLED ? LOCAL_RECIPES : [];
+    return LOCAL_RECIPES;
   }
 
-  return (data ?? []) as Recipe[];
+  return mergeSavedAndEverydayRecipes((data ?? []) as Recipe[], LOCAL_RECIPES);
 }
 
 export function useRecipeMatch(inventory: InventoryItemFlat[]): {

@@ -47,6 +47,23 @@ const INSTRUCTIONS_BY_NAME: Record<string, string[]> = {
     'Cook until whites are set and edges are crisp.',
     'Serve immediately with bread or rice.',
   ],
+  'boiled egg': [
+    'Place the eggs in a saucepan and cover them with cool water.',
+    'Bring to a boil, then lower the heat and simmer for 9 minutes.',
+    'Transfer the eggs to cold water for 2 minutes.',
+    'Peel and serve whole or halved.',
+  ],
+  'plain rice': [
+    'Rinse the rice until the water runs mostly clear.',
+    'Add rice and water to a covered saucepan.',
+    'Bring to a boil, then cook on low heat for 12-15 minutes.',
+    'Rest covered for 5 minutes, then fluff and serve.',
+  ],
+  'black tea': [
+    'Bring one cup of water to a boil.',
+    'Add tea leaves and simmer for 2 minutes.',
+    'Add optional sugar, strain, and serve hot.',
+  ],
 };
 
 export function getRecipeInstructions(recipe: Recipe): string[] {

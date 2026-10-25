@@ -6,6 +6,8 @@ import { getExpiryStatus } from '../lib/expiryLogic.ts';
 import { subsetMatcher } from '../lib/subsetMatcher.ts';
 import { databaseErrorMessage, isOutdatedSchemaError } from '../lib/databaseErrors.ts';
 import { mealDbToRecipe, parseMealDbMeasure } from '../lib/recipeCatalog.ts';
+import { mergeSavedAndEverydayRecipes } from '../lib/recipeImages.ts';
+import { LOCAL_RECIPES } from '../lib/localRecipes.ts';
 import type { InventoryItemFlat, Recipe, Unit } from '../types/index.ts';
 
 test('normalizes quantities without mixing dimensions', () => {
@@ -51,6 +53,18 @@ test('parses external recipe measures into MealStack base dimensions', () => {
   assert.equal(parsed.source, 'themealdb');
   assert.equal(parsed.recipe_ingredients[0].quantity_base, 1000);
   assert.equal(mealDbToRecipe({ idMeal: '124', strMeal: 'Vegetable', strIngredient1: 'Egg Plants', strMeasure1: '2' }).recipe_ingredients[0].ingredient.category, 'veg');
+});
+
+test('adds images and everyday staples to the unified recipe library', () => {
+  const names = LOCAL_RECIPES.map((item) => item.name);
+  assert.equal(names.includes('Boiled Egg'), true);
+  assert.equal(names.includes('Plain Rice'), true);
+  assert.equal(names.includes('Black Tea'), true);
+
+  const saved = recipe('saved-egg', 'Egg Fry', 'Eggs', 2, 'pcs');
+  const merged = mergeSavedAndEverydayRecipes([saved], LOCAL_RECIPES);
+  assert.equal(merged.filter((item) => item.name === 'Egg Fry').length, 1);
+  assert.equal(merged.find((item) => item.name === 'Egg Fry')?.image_url, '/recipes/egg-fry.jpg');
 });
 
 test('canonicalizes supported ingredient aliases', () => {

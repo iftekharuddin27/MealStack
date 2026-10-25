@@ -1,13 +1,29 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase/client';
+import {
+  addLocalShoppingItem,
+  deleteLocalShoppingItem,
+  readLocalShoppingList,
+  toggleLocalShoppingItem,
+} from '@/lib/localShoppingListStore';
 import type { ShoppingListItem } from '@/types';
 
 const KEY = ['shopping-list'] as const;
 
-async function errorFrom(res: Response) {
-  const body = await res.json().catch(() => null);
-  return new Error(body?.error ?? 'Shopping list request failed.');
+async function responseBody(res: Response) {
+  return res.json().catch(() => null);
+}
+
+async function currentUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Session expired. Please sign in again.');
+  return user.id;
+}
+
+function setupRequired(res: Response, body: any): boolean {
+  return res.status === 503 && body?.code === 'setup_required';
 }
 
 export function useShoppingList() {
@@ -15,8 +31,10 @@ export function useShoppingList() {
     queryKey: KEY,
     queryFn: async (): Promise<ShoppingListItem[]> => {
       const res = await fetch('/api/shopping-list');
-      if (!res.ok) throw await errorFrom(res);
-      const { data } = await res.json();
+      const body = await responseBody(res);
+      if (setupRequired(res, body)) return readLocalShoppingList(await currentUserId());
+      if (!res.ok) throw new Error(body?.error ?? 'Shopping list request failed.');
+      const { data } = body;
       return (data ?? []).map((item: any) => ({
         ...item,
         quantity_base: Number(item.quantity_base),
@@ -40,7 +58,17 @@ export function useAddShoppingItems() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(item),
         });
-        if (!res.ok) throw await errorFrom(res);
+        const body = await responseBody(res);
+        if (setupRequired(res, body)) {
+          addLocalShoppingItem(await currentUserId(), {
+            ingredient_id: item.ingredient_id ?? null,
+            ingredient_name: item.ingredient_name,
+            quantity_base: item.quantity_base,
+            unit: item.unit,
+          });
+          continue;
+        }
+        if (!res.ok) throw new Error(body?.error ?? 'Shopping list request failed.');
       }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
@@ -56,7 +84,12 @@ export function useToggleShoppingItem() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, checked }),
       });
-      if (!res.ok) throw await errorFrom(res);
+      const body = await responseBody(res);
+      if (setupRequired(res, body)) {
+        toggleLocalShoppingItem(await currentUserId(), id, checked);
+        return;
+      }
+      if (!res.ok) throw new Error(body?.error ?? 'Shopping list request failed.');
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
   });
@@ -67,7 +100,12 @@ export function useDeleteShoppingItem() {
   return useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/shopping-list?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-      if (!res.ok) throw await errorFrom(res);
+      const body = await responseBody(res);
+      if (setupRequired(res, body)) {
+        deleteLocalShoppingItem(await currentUserId(), id);
+        return;
+      }
+      if (!res.ok) throw new Error(body?.error ?? 'Shopping list request failed.');
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }),
   });

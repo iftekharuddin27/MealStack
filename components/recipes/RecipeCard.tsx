@@ -13,6 +13,7 @@ interface Props {
   cookable?: boolean;
   missingIngredients?: MissingIngredient[];
   availableRatio?: number;
+  onDelete?: () => void;
 }
 
 const DIFFICULTY_COLOR: Record<string, string> = {
@@ -25,11 +26,17 @@ export default function RecipeCard({
   cookable = true,
   missingIngredients = [],
   availableRatio = 1,
+  onDelete,
 }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
   const [shoppingMessage, setShoppingMessage] = useState('');
   const addShoppingItems = useAddShoppingItems();
-  const external = recipe.source === 'themealdb';
+  const referenceOnly = recipe.source === 'themealdb' || recipe.source === 'curated' || recipe.source === 'personal';
+  const sourceLabel = recipe.source === 'themealdb'
+    ? 'TheMealDB'
+    : recipe.source === 'personal'
+      ? 'Personal'
+      : 'MealStack';
 
   async function addMissingToShoppingList() {
     try {
@@ -51,9 +58,9 @@ export default function RecipeCard({
     <article className="card overflow-hidden transition-colors hover:border-border-2">
       {recipe.image_url ? (
         <div className="relative h-40 overflow-hidden bg-background-3">
-          <Image src={recipe.image_url} alt="" fill sizes="(min-width: 1024px) 40vw, 90vw" className="object-cover" />
+          <Image src={recipe.image_url} alt={`${recipe.name} recipe`} fill sizes="(min-width: 1024px) 40vw, 90vw" className="object-cover" unoptimized={recipe.image_url.startsWith('data:')} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-          <span className="absolute bottom-2 left-3 rounded bg-black/70 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-white">TheMealDB</span>
+          <span className="absolute bottom-2 left-3 rounded bg-black/70 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-white">{sourceLabel}</span>
         </div>
       ) : (
         <div className={`flex h-24 items-center justify-center bg-gradient-to-br text-5xl ${cookable ? 'from-green-950 to-teal-950' : 'from-background-3 to-surface'}`} aria-hidden="true">{recipe.emoji}</div>
@@ -61,7 +68,10 @@ export default function RecipeCard({
       <div className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-semibold">{recipe.name}</h3>
-          {!cookable && <span className="rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{Math.round(availableRatio * 100)}% covered</span>}
+          <div className="flex items-center gap-2">
+            {!cookable && <span className="rounded border border-border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{Math.round(availableRatio * 100)}% covered</span>}
+            {onDelete && <button type="button" onClick={onDelete} aria-label={`Delete ${recipe.name}`} className="rounded border border-border px-2 py-0.5 text-[10px] text-red-300 hover:border-red-900">Delete</button>}
+          </div>
         </div>
         <div className="flex flex-wrap gap-3 font-mono text-[10px] text-muted-foreground">
           <span>Time: {recipe.time_minutes} min</span>
@@ -78,7 +88,7 @@ export default function RecipeCard({
 
         {cookable ? (
           <button onClick={() => setModalOpen(true)} className="w-full rounded-lg bg-accent py-2.5 text-[12px] font-bold tracking-wide text-background transition hover:bg-accent-hover">
-            {external ? 'View recipe · ingredients available' : 'Cook recipe · FIFO deduction'}
+            {referenceOnly ? 'View recipe · ingredients available' : 'Cook recipe · FIFO deduction'}
           </button>
         ) : (
           <div className="space-y-2">
@@ -91,7 +101,7 @@ export default function RecipeCard({
                 </li>
               ))}
             </ul>
-            {external && (
+            {referenceOnly && (
               <button onClick={() => setModalOpen(true)} className="w-full rounded-lg border border-border py-2.5 text-xs font-medium text-foreground hover:border-accent">
                 View recipe and instructions
               </button>

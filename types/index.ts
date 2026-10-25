@@ -70,7 +70,7 @@ export interface Recipe {
   difficulty: Difficulty;
   recipe_ingredients: RecipeIngredient[];
   created_at: string;
-  source?: 'mealstack' | 'themealdb';
+  source?: 'mealstack' | 'themealdb' | 'curated' | 'personal';
   source_url?: string | null;
   image_url?: string | null;
   instructions?: string[];

@@ -26,7 +26,7 @@ export default function CookModal({ recipe, inventory, onClose }: Props) {
   const previouslyFocused = useRef<HTMLElement | null>(null);
   const preview = useMemo(() => previewDeduction(recipe, inventory, servings), [recipe, inventory, servings]);
   const instructions = getRecipeInstructions(recipe);
-  const external = recipe.source === 'themealdb';
+  const referenceOnly = recipe.source === 'themealdb' || recipe.source === 'curated' || recipe.source === 'personal';
   const servingMultiplier = servings / Math.max(recipe.servings, 1);
 
   useEffect(() => {
@@ -126,8 +126,8 @@ export default function CookModal({ recipe, inventory, onClose }: Props) {
           <div>
             <h2 id="cook-title" className="font-head text-xl">Cook {recipe.name}</h2>
             <p id="cook-description" className="mt-1 text-xs text-muted-foreground">
-              {external
-                ? 'Recipe details supplied by TheMealDB. Quantities are normalized for inventory matching.'
+              {referenceOnly
+                ? 'Recipe quantities are normalized and compared with your current inventory.'
                 : 'Inventory is validated, locked, and deducted earliest-expiry-first in one transaction.'}
             </p>
           </div>
@@ -145,7 +145,7 @@ export default function CookModal({ recipe, inventory, onClose }: Props) {
           <ol className="list-decimal space-y-1.5 pl-5 text-sm">{instructions.map((step, index) => <li key={index}>{step}</li>)}</ol>
         </section>
 
-        {external ? (
+        {referenceOnly ? (
           <section className="my-5" aria-labelledby={`ingredients-${recipe.id}`}>
             <h3 id={`ingredients-${recipe.id}`} className="mb-2 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">Ingredients</h3>
             <div className="grid gap-2 sm:grid-cols-2">{recipe.recipe_ingredients.map((item) => (
@@ -175,13 +175,13 @@ export default function CookModal({ recipe, inventory, onClose }: Props) {
         {confirmCook.error && <p role="alert" className="mb-4 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">{confirmCook.error.message}</p>}
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 rounded-lg border border-border py-2.5 text-sm text-muted-foreground">Close</button>
-          {external ? (
+          {referenceOnly && recipe.source_url ? (
             <a href={recipe.source_url ?? 'https://www.themealdb.com'} target="_blank" rel="noreferrer" className="flex-1 rounded-lg bg-accent py-2.5 text-center text-sm font-bold text-background">
               Open original recipe
             </a>
-          ) : (
+          ) : !referenceOnly ? (
             <button onClick={() => confirmCook.mutate()} disabled={confirmCook.isPending} className="flex-1 rounded-lg bg-accent py-2.5 text-sm font-bold text-background disabled:opacity-60">{confirmCook.isPending ? 'Committing transaction…' : 'Confirm and deduct'}</button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

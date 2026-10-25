@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase/client';
-import { databaseErrorMessage } from '@/lib/databaseErrors';
+import { databaseErrorMessage, isOutdatedSchemaError } from '@/lib/databaseErrors';
 import type { AnalyticsSummary, Category } from '@/types';
 
 interface InventoryEventRow {
@@ -52,17 +52,37 @@ async function fetchAnalytics(): Promise<AnalyticsSummary> {
       .order('cooked_at', { ascending: false }),
   ]);
 
-  if (eventsResult.error) throw new Error(databaseErrorMessage(eventsResult.error));
-  if (historyResult.error) throw new Error(databaseErrorMessage(historyResult.error));
+  let eventRows = eventsResult.data ?? [];
+  let historyRows = historyResult.data ?? [];
 
-  const events = (eventsResult.data ?? []).map((row: any): InventoryEventRow => ({
+  if (eventsResult.error) {
+    if (isOutdatedSchemaError(eventsResult.error)) eventRows = [];
+    else throw new Error(databaseErrorMessage(eventsResult.error));
+  }
+  if (historyResult.error && isOutdatedSchemaError(historyResult.error)) {
+    const legacyHistory = await supabase
+      .from('cooking_history')
+      .select('cooked_at, money_saved')
+      .gte('cooked_at', since)
+      .order('cooked_at', { ascending: false });
+    if (legacyHistory.error) throw new Error(databaseErrorMessage(legacyHistory.error));
+    historyRows = (legacyHistory.data ?? []).map((row: any) => ({
+      cooked_at: row.cooked_at,
+      ingredient_value_used: Number(row.money_saved ?? 0),
+      rescued_value: Number(row.money_saved ?? 0),
+    }));
+  } else if (historyResult.error) {
+    throw new Error(databaseErrorMessage(historyResult.error));
+  }
+
+  const events = eventRows.map((row: any): InventoryEventRow => ({
     occurred_at: row.occurred_at,
     event_type: row.event_type,
     value_amount: Number(row.value_amount ?? 0),
     was_at_risk: Boolean(row.was_at_risk),
     category: row.category as Category,
   }));
-  const history = (historyResult.data ?? []).map((row: any): HistoryRow => ({
+  const history = historyRows.map((row: any): HistoryRow => ({
     cooked_at: row.cooked_at,
     ingredient_value_used: Number(row.ingredient_value_used ?? 0),
     rescued_value: Number(row.rescued_value ?? 0),
